@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "zilaws-server",
+  "version": "1.0.0",
+  "description": "Typescript NPM package template that is ready for NPM and Github Packages publish.",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "umd:main": "dist/umd/index.js",
+  "types": "dist/types/index.d.ts",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run test:cov-build && npm run format:fix && npm run build:cjs && npm run build:esm && npm run build:types",
+    "forcebuild": "npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "rimraf ./dist/cjs && tsc -p config/tsconfig.cjs.json",
+    "build:esm": "rimraf ./dist/esm && tsc -p config/tsconfig.esm.json",
+    "build:types": "rimraf ./dist/types && tsc -p config/tsconfig.types.json",
+    "clean": "rimraf ./dist/cjs ./dist/esm ./dist/umd ./dist/types",
+    "package": "npm run build && npm pack",
+    "test": "jest --no-cache --runInBand",
+    "test:cov": "jest --coverage --no-cache --runInBand",
+    "test:cov-browser": "jest --coverage --no-cache --runInBand && start ./coverage/lcov-report/index.html",
+    "test:cov-build": "jest --coverage --no-cache --runInBand && jest-coverage-badges-ts --output \"./.coverage-badges\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:fix": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "release": "rimraf ./*.tgz -g && npm run package && node tools/versionManager.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "websocket",
+    "server",
+    "connection",
+    "library",
+    "eventhandler",
+    "waiter",
+    "async",
+    "tcp",
+    "realtime",
+    "node",
+    "typescript",
+    "events"
+  ],
+  "author": "warstekhun",
+  "license": "MIT",
+  "homepage": "https://zilaws.com",
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:ZilaWS/server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ZilaWS/server/issues"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.4",
+    "@types/ws": "^8.5.5",
+    "jest": "^29.6.4",
+    "jest-coverage-badges-ts": "^0.1.8",
+    "prettier": "^3.0.3",
+    "prompt": "^1.3.0",
+    "rimraf": "^5.0.1",
+    "ts-jest": "^29.1.1",
+    "ts-loader": "^9.4.4",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4",
+    "zilaws-client": "^1.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.13.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+    "todoHighlighter.exclude": [
+        "node_modules/**",
+        "dist/**",
+        "coverage/**"
+    ],
+    "todoHighlighter.include": [
+        "src/**/*.ts",
+        "test/**/*.ts"
+    ]
+}
