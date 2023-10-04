@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package",
   "name": "zilaws-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Typescript NPM package template that is ready for NPM and Github Packages publish.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
