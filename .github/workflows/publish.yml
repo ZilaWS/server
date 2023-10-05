@@ -23,7 +23,7 @@ jobs:
           prerelease: false
           body_path: "CHANGELOG.md"
 
-  publish:
+  publishNPM:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -33,19 +33,27 @@ jobs:
           node-version: '18.x'
           registry-url: 'https://registry.npmjs.org'
       - name: Install modules
-        run: npm install
+        run: npm ci
       - name: Build and generate coverage badges
         run: npm run build
       - name: Publish to npm
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  publishGHP:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
       - name: Setup .npmrc file to publish to GitHub Packages
         uses: actions/setup-node@v3
         with:
           node-version: '18.x'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@warstekhun'
+      - name: Install modules
+        run: npm ci
+      - name: Build and generate coverage badges
+        run: npm run build
       - name: Publish to GitHub Packages
         run: npm publish
         env:

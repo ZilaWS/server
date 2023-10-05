@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package",
   "name": "zilaws-server",
-  "version": "1.0.1",
-  "description": "Typescript NPM package template that is ready for NPM and Github Packages publish.",
+  "version": "1.1.0",
+  "description": "ZilaWS is a blazingly fast and very lightweight library that provides an extremely easy-to-use way to transmit data via websockets between clientside and serverside using eventhandlers and async waiters.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "umd:main": "dist/umd/index.js",
@@ -17,14 +17,13 @@
     "build:esm": "rimraf ./dist/esm && tsc -p config/tsconfig.esm.json",
     "build:types": "rimraf ./dist/types && tsc -p config/tsconfig.types.json",
     "clean": "rimraf ./dist/cjs ./dist/esm ./dist/umd ./dist/types",
-    "package": "npm run build && npm pack",
     "test": "jest --no-cache --runInBand",
     "test:cov": "jest --coverage --no-cache --runInBand",
     "test:cov-browser": "jest --coverage --no-cache --runInBand && start ./coverage/lcov-report/index.html",
     "test:cov-build": "jest --coverage --no-cache --runInBand && jest-coverage-badges-ts --output \"./.coverage-badges\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
     "format:fix": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "release": "rimraf ./*.tgz -g && npm run package && node tools/versionManager.js"
+    "release": "rimraf ./*.tgz -g && npm run build && node tools/versionManager.js"
   },
   "files": [
     "dist"
@@ -67,7 +66,7 @@
     "typescript": "^5.2.2",
     "webpack": "^5.88.2",
     "webpack-cli": "^5.1.4",
-    "zilaws-client": "^1.0.0"
+    "zilaws-client": "^1.1.0"
   },
   "dependencies": {
     "ws": "^8.13.0"

@@ -1,5 +1,5 @@
-import ZilaServer, { ZilaClient, CloseCodes, WSStatus } from "../src/index";
-import connectTo, { ZilaConnection } from "zilaws-client";
+import { ZilaServer, ZilaClient, CloseCodes, WSStatus } from "../src/index";
+import { connectTo, ZilaConnection } from "zilaws-client";
 import { SimpleLogger, VerboseLogger } from "../src/verboseLogger";
 import { WebSocket } from "ws";
 import { join } from "path";

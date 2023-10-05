@@ -104,7 +104,7 @@ interface IServerEvents {
   onClientRawMessageBeforeCallback: (socket: ZilaClient, rawMessage: string) => void;
 }
 
-export default class ZilaServer {
+export class ZilaServer {
   wss: WebSocketServer;
   VerbLog?: ILogger;
   Logger?: ILogger;

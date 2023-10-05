@@ -8,7 +8,7 @@
 
 import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
-import ZilaServer, { WSStatus } from ".";
+import { ZilaServer, WSStatus } from ".";
 import { IWSMessage } from "./IWSMessage";
 
 export default class ZilaClient {
