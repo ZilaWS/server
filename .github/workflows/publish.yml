@@ -49,12 +49,12 @@ jobs:
         with:
           node-version: '18.x'
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@warstekhun'
+          scope: '@zilaws'
       - name: Install modules
         run: npm ci
       - name: Build and generate coverage badges
         run: npm run build
       - name: Publish to GitHub Packages
-        run: npm publish
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.PAT }}
