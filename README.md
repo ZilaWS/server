@@ -22,6 +22,9 @@
     <a href="https://zilaws.com" target="_blank" rel="noopener noreferrer">Documentation</a>
 </h2>
 
+<h3 style="text-align: center">Looking for the <a href="https://www.npmjs.com/package/zilaws-client" target="_blank" rel="noopener noreferrer">zilaws-client</a> package?</h3>
+
+<p>The ZilaWS Server can accept WS connections from non ZilaWS clients but won't work as expected.</p>
 
 <h2>
 Waiter example
