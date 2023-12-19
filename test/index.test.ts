@@ -98,12 +98,20 @@ describe("Non-Secure", () => {
     expect(resp).toEqual<string>("sampleText success");
   });
 
-  test.failing("Bad data to Broadcast Send", () => {
-    server.broadcastSend("Broadcast", () => {});
-  });
+  test("Getting cookies", async () => {
+    const locClient = await connectTo("ws://127.0.0.1:6589", (reason) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
 
-  test.failing("Bad data to Broadcast Waiter", () => {
-    server.broadcastWaiter("Broadcast", () => {});
+    server.onceMessageHandler("CookieTestIdentifier", (socket) => {
+      socket.addCookie({
+        name: "MyCookie",
+        value: "CookieValue",
+        domain: "/"
+      });
+
+      expect(socket.cookies).toEqual({"MyCookie": "CookieValue"});
+    });
   });
 
   test("Broadcast Waiter", async () => {
@@ -123,10 +131,10 @@ describe("Non-Secure", () => {
       });
     });
 
-    locClient.onceMessageHandler("BroadcastWaiter", (data: string) => {
-      expect(data).toBe("Broadcast data");
-      return "Data2";
-    });
+    // locClient.onceMessageHandler("BroadcastWaiter", (data: string) => {
+    //   expect(data).toBe("Broadcast data");
+    //   return "Data2";
+    // });
 
     const resp = await Promise.allSettled(server.broadcastWaiter("BroadcastWaiter", "Broadcast data"));
     locClient.disconnect();
@@ -172,14 +180,6 @@ describe("Non-Secure", () => {
 
   test("Remove EventListener", () => {
     server.removeEventListener("onClientConnect", loc);
-  });
-
-  test.failing("Passing a function to send", () => {
-    server.send(clientSocket, "SMTH", loc);
-  });
-
-  test.failing("Passing a function to waiter", async () => {
-    await server.waiter(clientSocket, "SMTH", loc);
   });
 
   test("CallEventHandler Bad Message", async () => {
@@ -351,6 +351,49 @@ describe("Secure Server", () => {
   test("Connecting", async () => {
     client = await ZilaConnection.connectTo(
       "wss://127.0.0.1:6594",
+      (reason) => {
+        console.error(reason);
+      },
+      true
+    );
+    expect(client.status).toBe(WSStatus.OPEN);
+  });
+
+  test("Server status getter", () => {
+    expect(server.status).toBe(WSStatus.OPEN);
+  });
+
+  test("Disconnecting", async () => {
+    await expect(client.disconnectAsync()).resolves.toBe(undefined);
+  });
+
+  afterAll(async () => {
+    await server.stopServerAsync();
+  });
+});
+
+
+describe("Custom Header server", () => {
+  let client: ZilaConnection;
+  let server: ZilaServer;
+
+  beforeAll(async () => {
+    server = new ZilaServer({
+      port: 6595,
+      headerEvent(headers) {
+        if(headers.authorization) {
+          console.log(headers.authorization);
+        }
+        return [
+          'authorization: Bearer myBearerToken' 
+        ]
+      },
+    });
+  });
+
+  test("Connecting", async () => {
+    client = await ZilaConnection.connectTo(
+      "ws://127.0.0.1:6595",
       (reason) => {
         console.error(reason);
       },

@@ -8,13 +8,14 @@
 import { WebSocketServer } from "ws";
 import { readFileSync } from "fs";
 import { createServer } from "https";
-import { IncomingMessage } from "http";
+import { IncomingMessage, IncomingHttpHeaders } from "http";
 import { randomUUID } from "crypto";
 import { ILogger, VerboseLogger, SimpleLogger } from "./verboseLogger";
 import ZilaClient from "./ZilaClient";
 import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
+import { parse as parseCookie } from 'cookie';
 
 interface IServerSettings {
   /**
@@ -53,6 +54,13 @@ interface IServerSettings {
    * Sets the host for the server
    */
   host?: string;
+
+  /**
+   * This event handler gets called before a new WS connection would be created.
+   * If you want to add new headers to the ugprade frame's reponse, return them as an array.
+   * @returns {Array<string>}
+   */
+  headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string>;
 }
 
 interface IServerEvents {
@@ -119,11 +127,23 @@ export class ZilaServer {
 
   private _status: WSStatus = WSStatus.OPENING;
 
+  private headerEvent: ((recievedHeaders: IncomingHttpHeaders) => Array<string>) | undefined = undefined;
+
   public get status() {
     return this._status;
   }
 
-  public constructor(settings: IServerSettings) {
+  private _clients: Set<ZilaClient> = new Set();
+
+  public get clients() {
+    return this._clients;
+  }
+
+  public readonly settings: IServerSettings;
+
+  public constructor(settings: IServerSettings) { 
+    this.settings = settings;
+    
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
       this.VerbLog.log(
@@ -153,11 +173,19 @@ export class ZilaServer {
       });
     }
 
+    this.headerEvent = settings.headerEvent;
+
+    if (this.headerEvent !== undefined) {
+      const hde = this.headerEvent;
+      this.wss.on("headers", (headers, request) => {
+        headers.push(...hde(request.headers));
+      });
+    }
+
     this._status = WSStatus.OPEN;
 
     this.Logger?.log(
-      `Ready for incoming connections on port ${settings.port} with SSL ${
-        settings.https ? "enabled" : "disabled"
+      `Ready for incoming connections on port ${settings.port} with SSL ${settings.https ? "enabled" : "disabled"
       }.`
     );
 
@@ -178,7 +206,9 @@ export class ZilaServer {
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
 
-      const zilaSocket = new ZilaClient(socket, req.socket.remoteAddress, this);
+      const zilaSocket = new ZilaClient(socket, req.socket.remoteAddress, this, req.headers.cookie ? parseCookie(req.headers.cookie) : {});
+
+      this._clients.add(zilaSocket);
 
       if (this.serverEvents.onClientConnect) {
         for (const cb of this.serverEvents.onClientConnect) {
@@ -207,8 +237,7 @@ export class ZilaServer {
 
         if (this.VerbLog) {
           this.VerbLog.log(
-            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${
-              event.type
+            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${event.type
             } | wasClean: ${event.wasClean}`
           );
         } else if (this.Logger) {
@@ -289,10 +318,6 @@ export class ZilaServer {
   }
 
   public broadcastSend(identifier: string, ...data: any[]): void {
-    if (typeof data == "function" || data.filter((el) => typeof el == "function").length > 0) {
-      throw new Error("Passing functions to the server is prohibited.");
-    }
-
     for (const socket of this.wss.clients) {
       const msg: IWSMessage = {
         callbackId: null,
@@ -316,30 +341,11 @@ export class ZilaServer {
   }
 
   public broadcastWaiter(identifier: string, ...data: any[]): Array<Promise<unknown>> {
-    if (typeof data == "function" || data.filter((el) => typeof el == "function").length > 0) {
-      throw new Error("Passing functions to the client is prohibited.");
-    }
-
     const promises: Array<Promise<unknown>> = [];
-
-    for (const socket of this.wss.clients) {
+    
+    for (const socket of this._clients) {
       promises.push(
-        new Promise((resolve) => {
-          const uuid = randomUUID();
-
-          this.setMessageHandler(uuid, (_, args: any[]): void => {
-            this.removeMessageHandler(uuid);
-            resolve(args);
-          });
-
-          const msg: IWSMessage = {
-            callbackId: uuid,
-            message: data,
-            identifier: identifier,
-          };
-
-          socket.send(JSON.stringify(msg));
-        })
+        socket.waiter(identifier, ...data)
       );
     }
 
