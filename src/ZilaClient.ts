@@ -10,6 +10,8 @@ import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
 import { ZilaServer, WSStatus } from ".";
 import { IWSMessage } from "./IWSMessage";
+import Cookie from 'cookie';
+import { ICookie } from "./ICookie";
 
 export default class ZilaClient {
   socket: WebSocketClient;
@@ -17,6 +19,16 @@ export default class ZilaClient {
   ip: string | undefined;
   server: ZilaServer;
   status: WSStatus;
+
+  private _cookies: Record<string, string> = {};
+
+  /**
+   * Cookies of the client's browser.
+   * Only contains cookies which were present while estabilishing the connection and which were set by ZilaWS.
+   */
+  public get cookies() {
+    return this._cookies;
+  }
 
   /**
    * *You must not use this constructor!*
@@ -26,12 +38,45 @@ export default class ZilaClient {
    * @param ip
    * @param server
    */
-  constructor(socket: WebSocketClient, ip: string | undefined, server: ZilaServer) {
+  constructor(socket: WebSocketClient, ip: string | undefined, server: ZilaServer, cookies?: Record<string, string>) {
     this.socket = socket;
     this.id = new Date(Date.now()).toISOString() + randomInt(0, 100);
     this.ip = ip;
     this.server = server;
     this.status = socket.readyState;
+    if(cookies) this._cookies = cookies;
+  }
+
+  public addCookie(
+    cookie: ICookie
+  ) {
+    const cookieStr = Cookie.serialize(cookie.name, cookie.value, cookie);
+    this.bSend("@SetCookie", cookieStr);
+    this._cookies = { ...this._cookies, ...Cookie.parse(cookieStr)};
+  }
+
+  public removeCookie(cookieName: string) {
+    if(Object.hasOwn(this._cookies, cookieName)) {
+      delete this._cookies[cookieName];  
+    }
+    
+    this.bSend("DelCookie", cookieName);
+  }
+
+  /**
+   * Returns a JSON serialized message object.
+   * @param identifier 
+   * @param data 
+   * @param callbackId 
+   * @param isBuiltIn 
+   * @returns 
+   */
+  private getMessageJSON(identifier: string, data: any[]|null, callbackId: string | null, isBuiltIn: boolean = false): string {
+    return JSON.stringify({
+      identifier: isBuiltIn ? '@' + identifier : identifier,
+      message: data,
+      callbackId: callbackId
+    });
   }
 
   /**
@@ -40,17 +85,16 @@ export default class ZilaClient {
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    */
   public send(identifier: string, ...data: any[]) {
-    if (typeof data == "function" || data.filter((el) => typeof el == "function").length > 0) {
-      throw new Error("Passing functions to the server is prohibited.");
-    }
-
-    const msg: IWSMessage = {
-      callbackId: null,
-      message: data,
-      identifier: identifier,
-    };
-
-    this.socket.send(JSON.stringify(msg));
+    this.socket.send(this.getMessageJSON(identifier, data, null));
+  }
+  
+  /**
+   * Send function for built-in systems
+   * @param {string} identifier The callback's name on the clientside.
+   * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
+  */
+ private bSend(identifier: string, ...data: any[]) {
+    this.socket.send(this.getMessageJSON(identifier, data, null, true));
   }
 
   /**
@@ -61,10 +105,6 @@ export default class ZilaClient {
    */
   public waiter(identifier: string, ...data: any[]): Promise<unknown> {
     return new Promise((resolve) => {
-      if (typeof data == "function" || data.filter((el) => typeof el == "function").length > 0) {
-        throw new Error("Passing functions to the client is prohibited.");
-      }
-
       const uuid = randomUUID();
 
       this.setMessageHandler(uuid, (args: any[]): void => {
@@ -72,13 +112,7 @@ export default class ZilaClient {
         resolve(args);
       });
 
-      const msg: IWSMessage = {
-        callbackId: uuid,
-        message: data,
-        identifier: identifier,
-      };
-
-      this.socket.send(JSON.stringify(msg));
+      this.socket.send(this.getMessageJSON(identifier, data, uuid));
     });
   }
 
