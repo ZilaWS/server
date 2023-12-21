@@ -1,6 +1,6 @@
 /**
  * @file ZilaWS
- * @module ZilaWs
+ * @module ZilaWS
  * @license
  * MIT License
  * Copyright (c) 2023 ZilaWS
@@ -10,7 +10,7 @@ import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
 import { ZilaServer, WSStatus } from ".";
 import { IWSMessage } from "./IWSMessage";
-import Cookie from 'cookie';
+import Cookie from "cookie";
 import { ICookie } from "./ICookie";
 
 export default class ZilaClient {
@@ -19,6 +19,7 @@ export default class ZilaClient {
   ip: string | undefined;
   server: ZilaServer;
   status: WSStatus;
+  isBrowser: boolean;
 
   private _cookies: Record<string, string> = {};
 
@@ -38,44 +39,54 @@ export default class ZilaClient {
    * @param ip
    * @param server
    */
-  constructor(socket: WebSocketClient, ip: string | undefined, server: ZilaServer, cookies?: Record<string, string>) {
+  constructor(
+    socket: WebSocketClient,
+    ip: string | undefined,
+    server: ZilaServer,
+    isBrowser: boolean,
+    cookies?: Record<string, string>
+  ) {
     this.socket = socket;
     this.id = new Date(Date.now()).toISOString() + randomInt(0, 100);
     this.ip = ip;
     this.server = server;
     this.status = socket.readyState;
-    if(cookies) this._cookies = cookies;
+    if (cookies) this._cookies = cookies;
+    this.isBrowser = isBrowser;
   }
 
-  public addCookie(
-    cookie: ICookie
-  ) {
+  public setCookie(cookie: ICookie) {
     const cookieStr = Cookie.serialize(cookie.name, cookie.value, cookie);
-    this.bSend("@SetCookie", cookieStr);
-    this._cookies = { ...this._cookies, ...Cookie.parse(cookieStr)};
+    this.bSend("SetCookie", cookieStr);
+    this._cookies[cookie.name] = cookie.value;
   }
 
   public removeCookie(cookieName: string) {
-    if(Object.hasOwn(this._cookies, cookieName)) {
-      delete this._cookies[cookieName];  
+    if (Object.hasOwn(this._cookies, cookieName)) {
+      delete this._cookies[cookieName];
     }
-    
+
     this.bSend("DelCookie", cookieName);
   }
 
   /**
    * Returns a JSON serialized message object.
-   * @param identifier 
-   * @param data 
-   * @param callbackId 
-   * @param isBuiltIn 
-   * @returns 
+   * @param identifier
+   * @param data
+   * @param callbackId
+   * @param isBuiltIn
+   * @returns
    */
-  private getMessageJSON(identifier: string, data: any[]|null, callbackId: string | null, isBuiltIn: boolean = false): string {
+  private getMessageJSON(
+    identifier: string,
+    data: any[] | null,
+    callbackId: string | null,
+    isBuiltIn: boolean = false
+  ): string {
     return JSON.stringify({
-      identifier: isBuiltIn ? '@' + identifier : identifier,
+      identifier: isBuiltIn ? "@" + identifier : identifier,
       message: data,
-      callbackId: callbackId
+      callbackId: callbackId,
     });
   }
 
@@ -87,13 +98,13 @@ export default class ZilaClient {
   public send(identifier: string, ...data: any[]) {
     this.socket.send(this.getMessageJSON(identifier, data, null));
   }
-  
+
   /**
    * Send function for built-in systems
    * @param {string} identifier The callback's name on the clientside.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
-  */
- private bSend(identifier: string, ...data: any[]) {
+   */
+  private bSend(identifier: string, ...data: any[]) {
     this.socket.send(this.getMessageJSON(identifier, data, null, true));
   }
 
