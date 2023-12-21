@@ -25,7 +25,7 @@ export default class ZilaClient {
 
   /**
    * Cookies of the client's browser.
-   * Only contains cookies which were present while estabilishing the connection and which were set by ZilaWS.
+   * Only contains cookies which were present while establishing the connection and which were set by ZilaWS.
    */
   public get cookies() {
     return this._cookies;
