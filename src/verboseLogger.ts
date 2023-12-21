@@ -1,14 +1,14 @@
 /**
  * @file ZilaWS
- * @module ZilaWs
+ * @module ZilaWS
  * @license
  * MIT License
  * Copyright (c) 2023 ZilaWS
  */
 export interface ILogger {
-  log: Function;
-  warn: Function;
-  error: Function;
+  log: (text: string) => void;
+  warn: (text: string) => void;
+  error: (text: string) => void;
 }
 
 const verbosePrefix = "[ZilaWS] (Verbose): ";

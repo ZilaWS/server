@@ -1,21 +1,21 @@
 /**
  * @file ZilaWS
- * @module ZilaWs
+ * @module ZilaWS
  * @license
  * MIT License
  * Copyright (c) 2023 ZilaWS
  */
 import { WebSocketServer } from "ws";
 import { readFileSync } from "fs";
-import { createServer } from "https";
+import { createServer as createServerHTTP, type Server as ServerHTTP } from "http";
+import { createServer as createServerHTTPS, type Server as ServerHTTPS } from "https";
 import { IncomingMessage, IncomingHttpHeaders } from "http";
-import { randomUUID } from "crypto";
 import { ILogger, VerboseLogger, SimpleLogger } from "./verboseLogger";
 import ZilaClient from "./ZilaClient";
 import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
-import { parse as parseCookie } from 'cookie';
+import { parse as parseCookie } from "cookie";
 
 interface IServerSettings {
   /**
@@ -117,6 +117,8 @@ export class ZilaServer {
   VerbLog?: ILogger;
   Logger?: ILogger;
 
+  private baseServer: ServerHTTP | ServerHTTPS;
+
   private serverEvents: {
     [K in keyof IServerEvents]?: Array<IServerEvents[K]> | undefined;
   } = {};
@@ -141,9 +143,9 @@ export class ZilaServer {
 
   public readonly settings: IServerSettings;
 
-  public constructor(settings: IServerSettings) { 
+  public constructor(settings: IServerSettings) {
     this.settings = settings;
-    
+
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
       this.VerbLog.log(
@@ -157,21 +159,38 @@ export class ZilaServer {
       }
     }
 
+    this.wss = new WebSocketServer({
+      noServer: true,
+    });
+
     if (settings.https) {
       //If HTTPS server config is specified, an HTTPS server will be created.
-      this.wss = new WebSocketServer({
-        server: createServer({
-          cert: readFileSync(settings.https.pathToCert),
-          key: readFileSync(settings.https.pathToKey),
-          passphrase: settings.https.passphrase,
-        }).listen(settings.port, settings.host),
-      });
+      this.baseServer = createServerHTTPS({
+        cert: readFileSync(settings.https.pathToCert),
+        key: readFileSync(settings.https.pathToKey),
+        passphrase: settings.https.passphrase,
+      }).listen(settings.port, settings.host);
     } else {
-      this.wss = new WebSocketServer({
-        port: settings.port,
-        host: settings.host,
-      });
+      this.baseServer = createServerHTTP().listen(settings.port, settings.host);
     }
+
+    this.baseServer.on("upgrade", (req, socket, head) => {
+      //Can't test this with Node.
+      /* istanbul ignore next */
+      if (req.headers["set-cookie"] != undefined && req.headers["s-type"] == "1") {
+        //The s-type indicates this client is not running in a browser but the set-cookie means it has cookies. This might pose as a security threat, automatically closing the connection.
+        this.Logger?.warn(
+          `A client with the IP address of ${req.socket.remoteAddress} tried to connect while having cookies in its header and a marking for non-browser environment.`
+        );
+
+        socket.destroy();
+        return;
+      }
+
+      this.wss.handleUpgrade(req, socket, head, (client, uReq) => {
+        this.wss.emit("connection", client, uReq);
+      });
+    });
 
     this.headerEvent = settings.headerEvent;
 
@@ -185,7 +204,8 @@ export class ZilaServer {
     this._status = WSStatus.OPEN;
 
     this.Logger?.log(
-      `Ready for incoming connections on port ${settings.port} with SSL ${settings.https ? "enabled" : "disabled"
+      `Ready for incoming connections on port ${settings.port} with SSL ${
+        settings.https ? "enabled" : "disabled"
       }.`
     );
 
@@ -206,7 +226,15 @@ export class ZilaServer {
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
 
-      const zilaSocket = new ZilaClient(socket, req.socket.remoteAddress, this, req.headers.cookie ? parseCookie(req.headers.cookie) : {});
+      const zilaSocket = new ZilaClient(
+        socket,
+        req.socket.remoteAddress,
+        this,
+        req.headers["s-type"] != "1",
+        //Can't test this with Node.
+        /* istanbul ignore next */
+        req.headers.cookie ? parseCookie(req.headers.cookie) : {}
+      );
 
       this._clients.add(zilaSocket);
 
@@ -237,7 +265,8 @@ export class ZilaServer {
 
         if (this.VerbLog) {
           this.VerbLog.log(
-            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${event.type
+            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${
+              event.type
             } | wasClean: ${event.wasClean}`
           );
         } else if (this.Logger) {
@@ -340,12 +369,12 @@ export class ZilaServer {
     return socket.waiter(identifier, ...data);
   }
 
-  public broadcastWaiter(identifier: string, ...data: any[]): Array<Promise<unknown>> {
+  public broadcastWaiter(identifier: string, maxWaitTime: number, ...data: any[]): Array<Promise<unknown>> {
     const promises: Array<Promise<unknown>> = [];
-    
+
     for (const socket of this._clients) {
       promises.push(
-        socket.waiter(identifier, ...data)
+        Promise.race([socket.waiter(identifier, ...data), new Promise((_r, rej) => setTimeout(rej, maxWaitTime))])
       );
     }
 
@@ -410,6 +439,7 @@ export class ZilaServer {
    */
   public stopServer() {
     this.wss.close();
+    this.baseServer.close();
   }
 
   /**
@@ -436,7 +466,15 @@ export class ZilaServer {
         if (err) {
           reject(err.message);
         } else {
-          resolve();
+          this.baseServer.close((bError) => {
+            //This can't be tested without setting the baseServer property to public.
+            /* istanbul ignore next */
+            if (bError) {
+              reject(bError.message);
+            } else {
+              resolve();
+            }
+          });
         }
       });
     });

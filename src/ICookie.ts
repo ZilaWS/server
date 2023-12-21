@@ -1,6 +1,6 @@
 /**
  * @file ZilaWS
- * @module ZilaWs
+ * @module ZilaWS
  * @license
  * MIT License
  * Copyright (c) 2023 ZilaWS
