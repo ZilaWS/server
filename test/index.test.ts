@@ -1,4 +1,4 @@
-import { ZilaServer, ZilaClient, CloseCodes, WSStatus } from "../src/index";
+import { ZilaServer, ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders } from "../src/index";
 import { connectTo, ZilaConnection } from "zilaws-client";
 import { SimpleLogger, VerboseLogger } from "../src/verboseLogger";
 import { WebSocket } from "ws";
@@ -10,8 +10,8 @@ class MyClient extends ZilaClient {
     username: string;
   }
 
-  constructor(socket: WebSocket, ip: string | undefined, server: ZilaServer, isBrowser: boolean, cookies?: Map<string, string>) {
-    super(socket, ip, server, isBrowser, cookies);
+  constructor(socket: WebSocket, ip: string | undefined, server: ZilaServer, isBrowser: boolean, headers: IncomingHttpHeaders, cookies?: Map<string, string>) {
+    super(socket, ip, server, isBrowser, headers, cookies);
     
     this.clientData = {
       rank: "admin",

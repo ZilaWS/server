@@ -67,6 +67,7 @@ interface IServerSettings {
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
+		headers: {[name: string]: string },
     cookies?: Map<string, string>
   ) => ZilaClient;
 }
@@ -138,6 +139,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
+		headers: {[name: string]: string },
     cookies?: Map<string, string>
   ) => ZilaClient;
 
@@ -271,13 +273,14 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
-
+			req.headers
       let zilaSocket = new this.clientClass(
         socket,
         req.socket.remoteAddress,
         this,
         req.headers["s-type"] != "1",
         //Can't test this with Node.
+				req.headers as {[name: string]: string },
         /* istanbul ignore next */
         req.headers.cookie ? new Map(Object.entries(parseCookie(req.headers.cookie))) : new Map()
       );
@@ -610,4 +613,4 @@ function getIPAndPort(req: IncomingMessage): string {
   return `${req.socket.remoteAddress}:${req.socket.remotePort}`;
 }
 
-export { ZilaClient, CloseCodes, WSStatus };
+export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders };

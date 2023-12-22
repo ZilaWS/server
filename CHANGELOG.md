@@ -21,8 +21,8 @@
       username: string;
     }
 
-    constructor(socket: WebSocket, ip: string | undefined, server: ZilaServer, isBrowser: boolean, cookies?: Map<string, string>) {
-      super(socket, ip, server, isBrowser, cookies);
+  constructor(socket: WebSocket, ip: string | undefined, server: ZilaServer, isBrowser: boolean, headers: IncomingHttpHeaders, cookies?: Map<string, string>) {
+    super(socket, ip, server, isBrowser, headers, cookies);
 
       //This is the best place to authenticate the user.
       if(!AuthUser(cookies?.get("loginToken"))) {
