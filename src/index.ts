@@ -5,7 +5,7 @@
  * MIT License
  * Copyright (c) 2023 ZilaWS
  */
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket as WebSocketClient } from "ws";
 import { readFileSync } from "fs";
 import { createServer as createServerHTTP, type Server as ServerHTTP } from "http";
 import { createServer as createServerHTTPS, type Server as ServerHTTPS } from "https";
@@ -61,6 +61,14 @@ interface IServerSettings {
    * @returns {Array<string>}
    */
   headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string> | void;
+
+  clientClass?: new (
+    socket: WebSocketClient,
+    ip: string | undefined,
+    server: ZilaServer,
+    isBrowser: boolean,
+    cookies?: Map<string, string>
+  ) => ZilaClient;
 }
 
 interface IServerEvents {
@@ -110,12 +118,28 @@ interface IServerEvents {
    * @returns
    */
   onClientRawMessageBeforeCallback: (socket: ZilaClient, rawMessage: string) => void;
+
+  /**
+   * Runs when a client calls `syncCookies`.
+   * @param socket socket.cookies contain the newly synced cookies.
+   * @param cookiesBeforeSync The cookies before syncing
+   * @returns
+   */
+  onCookieSync: (socket: ZilaClient, cookiesBeforeSync: Map<string, string>) => void;
 }
 
-export class ZilaServer {
+export class ZilaServer<T extends ZilaClient = ZilaClient> {
   wss: WebSocketServer;
   VerbLog?: ILogger;
   Logger?: ILogger;
+
+  private clientClass: new (
+    socket: WebSocketClient,
+    ip: string | undefined,
+    server: ZilaServer,
+    isBrowser: boolean,
+    cookies?: Map<string, string>
+  ) => ZilaClient;
 
   private hasrequested: boolean;
 
@@ -125,7 +149,7 @@ export class ZilaServer {
     [K in keyof IServerEvents]?: Array<IServerEvents[K]> | undefined;
   } = {};
 
-  private readonly callbacks: { [id: string]: ZilaWSCallback | undefined } = {};
+  private readonly callbacks: { [id: string]: ZilaWSCallback<ZilaClient> | undefined } = {};
 
   private readonly bannedIpsAndReasons: Map<string, string | undefined> = new Map();
 
@@ -137,7 +161,7 @@ export class ZilaServer {
     return this._status;
   }
 
-  private _clients: Set<ZilaClient> = new Set();
+  private _clients: Set<ZilaClient | T> = new Set();
 
   public get clients() {
     return this._clients;
@@ -148,6 +172,7 @@ export class ZilaServer {
   public constructor(settings: IServerSettings) {
     this.settings = settings;
     this.hasrequested = false;
+    this.clientClass = settings.clientClass ?? ZilaClient;
 
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
@@ -223,8 +248,7 @@ export class ZilaServer {
     this._status = WSStatus.OPEN;
 
     this.Logger?.log(
-      `Ready for incoming connections on port ${settings.port} with SSL ${
-        settings.https ? "enabled" : "disabled"
+      `Ready for incoming connections on port ${settings.port} with SSL ${settings.https ? "enabled" : "disabled"
       }.`
     );
 
@@ -248,7 +272,7 @@ export class ZilaServer {
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
 
-      const zilaSocket = new ZilaClient(
+      let zilaSocket = new this.clientClass(
         socket,
         req.socket.remoteAddress,
         this,
@@ -287,8 +311,7 @@ export class ZilaServer {
 
         if (this.VerbLog) {
           this.VerbLog.log(
-            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${
-              event.type
+            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${event.type
             } | wasClean: ${event.wasClean}`
           );
         } else if (this.Logger) {
@@ -360,7 +383,7 @@ export class ZilaServer {
 
   /**
    * Calls an eventhandler on the clientside for the specified client.
-   * @param {ZilaClient} socket The websocket client
+   * @param {this.clientClass} socket The websocket client
    * @param {string} identifier The callback's name on the clientside.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    */
@@ -382,7 +405,7 @@ export class ZilaServer {
 
   /**
    * Calls an eventhandler on the clientside for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
-   * @param {ZilaClient} socket The websocket client
+   * @param {T} socket The websocket client
    * @param {string} identifier The callback's name on the clientside.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    * @returns {Promise<unknown>}
@@ -410,8 +433,8 @@ export class ZilaServer {
    * @param identifier The eventhandler's name
    * @param callback The eventhandler
    */
-  public setMessageHandler(identifier: string, callback: ZilaWSCallback): void {
-    this.callbacks[identifier] = callback;
+  public setMessageHandler(identifier: string, callback: (socket: T, ...args: any[]) => void): void {
+    this.callbacks[identifier] = callback as ZilaWSCallback<ZilaClient>;
   }
 
   /**
@@ -427,10 +450,10 @@ export class ZilaServer {
    * @param identifier
    * @param callback
    */
-  public onceMessageHandler(identifier: string, callback: ZilaWSCallback): void {
-    this.callbacks[identifier] = (socket, ...args: any[]) => {
+  public onceMessageHandler(identifier: string, callback: ZilaWSCallback<T>): void {
+    this.callbacks[identifier] = (socket: ZilaClient, ...args: any[]) => {
       this.removeMessageHandler(identifier);
-      return callback(socket, ...args);
+      return callback(socket as T, ...args);
     };
   }
 
@@ -530,7 +553,18 @@ export class ZilaServer {
             Object.hasOwn(msgObj.message, "length")
           ) {
             try {
-              ZilaClient.StoreSyncedCookies(socket, parseCookie(msgObj.message));
+              let beforeCookies: Map<string, string> | undefined;
+              if (this.serverEvents.onCookieSync && this.serverEvents.onCookieSync.length > 0) {
+                beforeCookies = socket.cookies;
+              }
+
+              ZilaClient.StoreSyncedCookies(socket, parseCookie(msgObj.message[0]));
+
+              if (beforeCookies) {
+                for (const cb of this.serverEvents.onCookieSync!) {
+                  cb(socket, beforeCookies);
+                }
+              }
             } catch {
               this.Logger?.warn(`Bad Message from ${getIPAndPort(req)}`);
             }
