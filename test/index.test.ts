@@ -215,7 +215,7 @@ describe("Non-Secure", () => {
   });
 
   test("Get all clients", () => {
-    expect(server.clients.has(clientSocket)).toBe(true);
+    expect(server.clients.includes(clientSocket)).toBe(true);
   });
 
   test("Server error log", () => {

@@ -161,7 +161,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     return this._status;
   }
 
-  private _clients: Set<ZilaClient | T> = new Set();
+  private _clients: Array<ZilaClient | T> = [];
 
   public get clients() {
     return this._clients;
@@ -282,7 +282,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
         req.headers.cookie ? new Map(Object.entries(parseCookie(req.headers.cookie))) : new Map()
       );
 
-      this._clients.add(zilaSocket);
+      this._clients.push(zilaSocket);
 
       if (this.serverEvents.onClientConnect) {
         for (const cb of this.serverEvents.onClientConnect) {
