@@ -10,6 +10,7 @@ import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
 import { ZilaServer, WSStatus } from ".";
 import Cookie from "cookie";
+import { IncomingHttpHeaders } from 'http';
 import { ICookie } from "./ICookie";
 
 export default class ZilaClient {
@@ -19,6 +20,8 @@ export default class ZilaClient {
   server: ZilaServer;
   status: WSStatus;
   isBrowser: boolean;
+
+  private readonly headers: IncomingHttpHeaders;
 
   private _cookies: Map<string, string> = new Map();
 
@@ -44,6 +47,7 @@ export default class ZilaClient {
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
+    headers: IncomingHttpHeaders,
     cookies?: Map<string, string>
   ) {
     this.socket = socket;
@@ -53,6 +57,7 @@ export default class ZilaClient {
     this.status = socket.readyState;
     if (cookies) this._cookies = cookies;
     this.isBrowser = isBrowser;
+    this.headers = headers;
   }
 
   /**
