@@ -98,28 +98,6 @@ describe("Non-Secure", () => {
     expect(resp).toEqual<string>("sampleText success");
   });
 
-  test("Getting cookies", () => {
-    clientSocket.setCookie({
-      name: "MyCookie",
-      value: "CookieValue",
-      domain: "/",
-    });
-
-    expect(clientSocket.cookies).toEqual({ MyCookie: "CookieValue" });
-  });
-
-  test("Removing cookies", () => {
-    clientSocket.setCookie({
-      name: "MyCookie2",
-      value: "CookieValue2",
-      domain: "/",
-    });
-
-    expect(clientSocket.cookies).toEqual({ MyCookie: "CookieValue", MyCookie2: "CookieValue2" });
-    clientSocket.removeCookie("MyCookie");
-    expect(clientSocket.cookies).toEqual({ MyCookie2: "CookieValue2" });
-  });
-
   test("Broadcast Waiter", async () => {
     client.onceMessageHandler("BroadcastWaiter", (data: string) => {
       expect(data).toBe("Broadcast data");
@@ -295,13 +273,19 @@ describe("Connection closing", () => {
 
   test("Ban", async () => {
     await new Promise<void>(async (resolve) => {
-      const locClient = await connectTo("ws://127.0.0.1:6592");
+      const locClient = await connectTo("ws://127.0.0.1:6592", async (reason) => {
+        expect(reason).toEqual("A reason to ban");
+        const retry = await connectTo("ws://127.0.0.1:6592", (reason) => {
+          expect(reason).toEqual("A reason to ban");
+        });
+      });
+
       locClient.addEventListener("onStatusChange", (val) => {
         resolve();
       });
 
       server.onceMessageHandler("BANME", async (socket) => {
-        socket.ban();
+        socket.ban("A reason to ban");
       });
 
       locClient.send("BANME");

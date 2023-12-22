@@ -60,7 +60,7 @@ interface IServerSettings {
    * If you want to add new headers to the ugprade frame's reponse, return them as an array.
    * @returns {Array<string>}
    */
-  headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string>;
+  headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string> | void;
 }
 
 interface IServerEvents {
@@ -117,6 +117,8 @@ export class ZilaServer {
   VerbLog?: ILogger;
   Logger?: ILogger;
 
+  private hasrequested: boolean;
+
   private baseServer: ServerHTTP | ServerHTTPS;
 
   private serverEvents: {
@@ -125,11 +127,11 @@ export class ZilaServer {
 
   private readonly callbacks: { [id: string]: ZilaWSCallback | undefined } = {};
 
-  private readonly bannedIps: Array<string> = [];
+  private readonly bannedIpsAndReasons: Map<string, string | undefined> = new Map();
 
   private _status: WSStatus = WSStatus.OPENING;
 
-  private headerEvent: ((recievedHeaders: IncomingHttpHeaders) => Array<string>) | undefined = undefined;
+  private headerEvent: ((recievedHeaders: IncomingHttpHeaders) => Array<string> | void) | undefined = undefined;
 
   public get status() {
     return this._status;
@@ -145,6 +147,7 @@ export class ZilaServer {
 
   public constructor(settings: IServerSettings) {
     this.settings = settings;
+    this.hasrequested = false;
 
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
@@ -174,6 +177,19 @@ export class ZilaServer {
       this.baseServer = createServerHTTP().listen(settings.port, settings.host);
     }
 
+    /* istanbul ignore next */
+    this.baseServer.on("request", (req, res) => {
+      if (!req.socket.remoteAddress) return;
+      this.hasrequested = true;
+
+      const [_, reason] = this.bannedIpsAndReasons.get(req.socket.remoteAddress) ?? [undefined, undefined];
+
+      if (!reason) return;
+
+      res.writeHead(403, reason);
+      res.end();
+    });
+
     this.baseServer.on("upgrade", (req, socket, head) => {
       //Can't test this with Node.
       /* istanbul ignore next */
@@ -183,7 +199,9 @@ export class ZilaServer {
           `A client with the IP address of ${req.socket.remoteAddress} tried to connect while having cookies in its header and a marking for non-browser environment.`
         );
 
-        socket.destroy();
+        socket.write(`HTTP/1.1 403 Forbidden\r\n`);
+        socket.write(`Content-Type: text/plain\r\n`);
+        socket.end();
         return;
       }
 
@@ -197,7 +215,8 @@ export class ZilaServer {
     if (this.headerEvent !== undefined) {
       const hde = this.headerEvent;
       this.wss.on("headers", (headers, request) => {
-        headers.push(...hde(request.headers));
+        const retValues = hde(request.headers);
+        if (typeof retValues == "object") headers.push(...retValues);
       });
     }
 
@@ -219,9 +238,12 @@ export class ZilaServer {
     });
 
     this.wss.addListener("connection", (socket, req) => {
-      if (req.socket.remoteAddress && this.bannedIps.includes(req.socket.remoteAddress)) {
-        socket.close(CloseCodes.BANNED);
-        return;
+      if (!this.hasrequested) {
+        const reason = this.bannedIpsAndReasons.get(req.socket.remoteAddress!);
+
+        if (reason) {
+          socket.close(CloseCodes.BANNED, reason);
+        }
       }
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
@@ -233,7 +255,7 @@ export class ZilaServer {
         req.headers["s-type"] != "1",
         //Can't test this with Node.
         /* istanbul ignore next */
-        req.headers.cookie ? parseCookie(req.headers.cookie) : {}
+        req.headers.cookie ? new Map(Object.entries(parseCookie(req.headers.cookie))) : new Map()
       );
 
       this._clients.add(zilaSocket);
@@ -429,8 +451,8 @@ export class ZilaServer {
    */
   public banClient(socket: ZilaClient, reason?: string) {
     socket.socket.close(CloseCodes.BANNED, reason);
-    if (socket.ip && !this.bannedIps.includes(socket.ip)) {
-      this.bannedIps.push(socket.ip);
+    if (socket.ip) {
+      this.bannedIpsAndReasons.set(socket.ip, reason);
     }
   }
 
@@ -496,6 +518,29 @@ export class ZilaServer {
       }
     }).then((val) => {
       msgObj = val;
+
+      /* istanbul ignore next */
+      if (msgObj.identifier[0] != "@") {
+        //Inner event
+        if (msgObj.identifier == "SyncCookies") {
+          if (
+            msgObj.message !== undefined &&
+            msgObj.message !== null &&
+            typeof msgObj.message == "object" &&
+            Object.hasOwn(msgObj.message, "length")
+          ) {
+            try {
+              ZilaClient.StoreSyncedCookies(socket, parseCookie(msgObj.message));
+            } catch {
+              this.Logger?.warn(`Bad Message from ${getIPAndPort(req)}`);
+            }
+          }
+        }
+
+        return;
+      }
+
+      msgObj.identifier = msgObj.identifier.slice(1);
 
       if (this.serverEvents.onClientRawMessageBeforeCallback) {
         for (const cb of this.serverEvents.onClientRawMessageBeforeCallback) {
