@@ -4,16 +4,33 @@ import { SimpleLogger, VerboseLogger } from "../src/verboseLogger";
 import { WebSocket } from "ws";
 import { join } from "path";
 
+class MyClient extends ZilaClient {
+  public clientData: {
+    rank: "admin" | "user";
+    username: string;
+  }
+
+  constructor(socket: WebSocket, ip: string | undefined, server: ZilaServer, isBrowser: boolean, cookies?: Map<string, string>) {
+    super(socket, ip, server, isBrowser, cookies);
+    
+    this.clientData = {
+      rank: "admin",
+      username: "SomeUsername"
+    }
+  }
+}
+
 describe("Non-Secure", () => {
   let client: ZilaConnection;
-  let server: ZilaServer;
+  let server: ZilaServer<MyClient>;
   let clientSocket: ZilaClient;
 
   beforeAll(async () => {
-    server = new ZilaServer({
+    server = new ZilaServer<MyClient>({
       port: 6589,
       logger: true,
       verbose: true,
+      clientClass: MyClient
     });
   });
 
@@ -98,6 +115,17 @@ describe("Non-Secure", () => {
     expect(resp).toEqual<string>("sampleText success");
   });
 
+  test("Custom WS Client data", () => {
+    server.onceMessageHandler("DataCheck", (socket) => {
+      expect(socket.clientData).toEqual({
+        rank: "admin",
+        username: "SomeUsername"
+      });
+    });
+
+    client.send("asd", 123);
+  });
+
   test("Broadcast Waiter", async () => {
     client.onceMessageHandler("BroadcastWaiter", (data: string) => {
       expect(data).toBe("Broadcast data");
@@ -158,7 +186,7 @@ describe("Non-Secure", () => {
     expect(await client.waiter("ONCEHANDLER", 25.474852784587654)).toBe(26.474852784587654);
   });
 
-  function loc(...args: any[]) {}
+  function loc(...args: any[]) { }
 
   test.failing("Multiple added event listeners", () => {
     server.addEventListener("onClientConnect", loc);
