@@ -7,6 +7,6 @@
  */
 export interface IWSMessage {
   identifier: string;
-  message: any[] | null;
+  message: any[] | any | null;
   callbackId: string | null;
 }

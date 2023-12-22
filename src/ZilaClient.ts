@@ -9,7 +9,6 @@
 import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
 import { ZilaServer, WSStatus } from ".";
-import { IWSMessage } from "./IWSMessage";
 import Cookie from "cookie";
 import { ICookie } from "./ICookie";
 
@@ -21,12 +20,13 @@ export default class ZilaClient {
   status: WSStatus;
   isBrowser: boolean;
 
-  private _cookies: Record<string, string> = {};
+  private _cookies: Map<string, string> = new Map();
 
   /**
-   * Cookies of the client's browser.
+   * Cookies of the client's browser. Must be URI encoded.
    * Only contains cookies which were present while establishing the connection and which were set by ZilaWS.
    */
+  /* istanbul ignore next */
   public get cookies() {
     return this._cookies;
   }
@@ -44,7 +44,7 @@ export default class ZilaClient {
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
-    cookies?: Record<string, string>
+    cookies?: Map<string, string>
   ) {
     this.socket = socket;
     this.id = new Date(Date.now()).toISOString() + randomInt(0, 100);
@@ -55,17 +55,39 @@ export default class ZilaClient {
     this.isBrowser = isBrowser;
   }
 
-  public setCookie(cookie: ICookie) {
-    const cookieStr = Cookie.serialize(cookie.name, cookie.value, cookie);
-    this.bSend("SetCookie", cookieStr);
-    this._cookies[cookie.name] = cookie.value;
+  /**
+   * Used to store cookies to a socket which has been recieved from the clientside for syncing.
+   * @param socket The socket to store the cookies in
+   * @param cookies Cookies to store
+   */
+  /* istanbul ignore next */
+  public static StoreSyncedCookies(socket: ZilaClient, cookies: Record<string, string>) {
+    socket._cookies = new Map(Object.entries(cookies));
   }
 
-  public removeCookie(cookieName: string) {
-    if (Object.hasOwn(this._cookies, cookieName)) {
-      delete this._cookies[cookieName];
-    }
+  /**
+   * Adds a cookie to the client's browser if it's actually running in a browser.
+   * @param cookie
+   */
+  /* istanbul ignore next */
+  public setCookie(cookie: ICookie) {
+    if (!this.isBrowser) return;
 
+    const cookieStr = Cookie.serialize(cookie.name, cookie.value, cookie);
+    this.bSend("SetCookie", cookieStr);
+
+    this._cookies.set(cookie.name, cookie.value);
+  }
+
+  /**
+   * Removes a cookie from the client's browser if it's actually running in a browser.
+   * @param cookieName
+   */
+  /* istanbul ignore next */
+  public removeCookie(cookieName: string) {
+    if (!this.isBrowser) return;
+
+    this._cookies.delete(cookieName);
     this.bSend("DelCookie", cookieName);
   }
 
@@ -83,6 +105,7 @@ export default class ZilaClient {
     callbackId: string | null,
     isBuiltIn: boolean = false
   ): string {
+    /* istanbul ignore next */
     return JSON.stringify({
       identifier: isBuiltIn ? "@" + identifier : identifier,
       message: data,
@@ -104,6 +127,7 @@ export default class ZilaClient {
    * @param {string} identifier The callback's name on the clientside.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    */
+  /* istanbul ignore next */
   private bSend(identifier: string, ...data: any[]) {
     this.socket.send(this.getMessageJSON(identifier, data, null, true));
   }
