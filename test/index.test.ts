@@ -8,14 +8,21 @@ class MyClient extends ZilaClient {
   public clientData: {
     rank: "admin" | "user";
     username: string;
-  }
+  };
 
-  constructor(socket: WebSocketClient, ip: string | undefined, server: ZilaServer, isBrowser: boolean, headers: IncomingHttpHeaders, cookies?: Map<string, string>) {
+  constructor(
+    socket: WebSocketClient,
+    ip: string | undefined,
+    server: ZilaServer,
+    isBrowser: boolean,
+    headers: IncomingHttpHeaders,
+    cookies?: Map<string, string>
+  ) {
     super(socket, ip, server, isBrowser, headers, cookies);
     this.clientData = {
       rank: "admin",
-      username: "SomeUsername"
-    }
+      username: "SomeUsername",
+    };
   }
 }
 
@@ -29,7 +36,7 @@ describe("Non-Secure", () => {
       port: 6589,
       logger: true,
       verbose: true,
-      clientClass: MyClient
+      clientClass: MyClient,
     });
   });
 
@@ -118,7 +125,7 @@ describe("Non-Secure", () => {
     server.onceMessageHandler("DataCheck", (socket) => {
       expect(socket.clientData).toEqual({
         rank: "admin",
-        username: "SomeUsername"
+        username: "SomeUsername",
       });
     });
 
@@ -131,13 +138,17 @@ describe("Non-Secure", () => {
   }, 1200);
 
   test("WaiterTimeout not responding in time", async () => {
-    const resp = await server.waiterTimeout<WSStatus[]>(clientSocket, "This event id does not exist on the client", 300);
+    const resp = await server.waiterTimeout<WSStatus[]>(
+      clientSocket,
+      "This event id does not exist on the client",
+      300
+    );
     expect(resp).toBe(undefined);
   }, 400);
 
   test("WaiterTimeout responding in time", async () => {
     client.onceMessageHandler("This event exists", (data) => {
-      return data + '!';
+      return data + "!";
     });
 
     const resp = await server.waiterTimeout<WSStatus[]>(clientSocket, "This event exists", 300, "Some data");
@@ -159,11 +170,21 @@ describe("Non-Secure", () => {
       return "Data2";
     });
 
-    const resp = (await server.broadcastWaiter<string>("BroadcastWaiter", "Broadcast data"));
-    locClient.disconnect();
+    const locClient2 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
 
-      expect(resp).toContain("Data1");
-      expect(resp).toContain("Data2");
+    const locClient3 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
+
+    const resp = await server.broadcastWaiter<string>("BroadcastWaiter", "Broadcast data");
+    locClient.disconnect();
+    locClient2.disconnect();
+    locClient3.disconnect();
+
+    expect(resp).toContain("Data1");
+    expect(resp).toContain("Data2");
   });
 
   test("Broadcast Waiter with timeout responding in time", async () => {
@@ -176,6 +197,10 @@ describe("Non-Secure", () => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
+    const locClient2 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
+
     locClient.onceMessageHandler("BroadcastWaiterTimeout", async (data: string) => {
       expect(data).toBe("Broadcast data");
       return await new Promise((res) => {
@@ -183,21 +208,22 @@ describe("Non-Secure", () => {
       });
     });
 
-    const resp = (await server.broadcastWaiterTimeout<string>("BroadcastWaiterTimeout", 50, "Broadcast data"));
+    const resp = await server.broadcastWaiterTimeout<string>("BroadcastWaiterTimeout", 50, "Broadcast data");
     locClient.disconnect();
+    locClient2.disconnect();
 
-      expect(resp).toContain("Data1");
-      expect(resp).toContain("Data2");
+    expect(resp).toContain("Data1");
+    expect(resp).toContain("Data2");
   });
 
   test("Broadcast Waiter with timeout not responding in time", async () => {
-    const resp = (await server.broadcastWaiterTimeout<string>("NonExistentIdentifier", 50, "Broadcast data"));
+    const resp = await server.broadcastWaiterTimeout<string>("NonExistentIdentifier", 50, "Broadcast data");
     const testArray: any[] = [];
-    
-    for(let i = 0; i < server.clients.length; i++) {
+
+    for (let i = 0; i < server.clients.length; i++) {
       testArray.push(undefined);
     }
-    
+
     expect(resp).toEqual(testArray);
   });
 
@@ -227,7 +253,7 @@ describe("Non-Secure", () => {
     expect(await client.waiter("ONCEHANDLER", 25.474852784587654)).toBe(26.474852784587654);
   });
 
-  function loc(...args: any[]) { }
+  function loc(...args: any[]) {}
 
   test.failing("Multiple added event listeners", () => {
     server.addEventListener("onClientConnect", loc);
@@ -281,7 +307,7 @@ describe("Simple Server Stop", () => {
       port: 6590,
       logger: true,
       verbose: true,
-      maxWaiterTime: 4000
+      maxWaiterTime: 4000,
     });
   });
 
