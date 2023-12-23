@@ -441,9 +441,9 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   }
 
   /**
-   * Calls an eventhandler on the clientside for the specified client.
+   * Calls an eventhandler on the client-side for the specified client.
    * @param {this.clientClass} socket The websocket client
-   * @param {string} identifier The callback's name on the clientside.
+   * @param {string} identifier The callback's name on the client-side.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    */
   public send(socket: ZilaClient, identifier: string, ...data: any[]): void {
@@ -463,10 +463,10 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   }
 
   /**
-   * Calls an eventhandler on the clientside for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+   * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
    * If the client doesn't respond in 
    * @param {T} socket The websocket client
-   * @param {string} identifier The callback's name on the clientside.
+   * @param {string} identifier The callback's name on the client-side.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
    * @returns {Promise<T | undefined>}
    */
@@ -475,9 +475,9 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   }
 
   /**
- * Calls an eventhandler on the clientside for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+ * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
  * @param {T} socket The websocket client
- * @param {string} identifier The callback's name on the clientside.
+ * @param {string} identifier The callback's name on the client-side.
  * @param {number} maxWaitingTime The maximum time this waiter will wait for the client. Defaults to the server's maxWaiterTime.
  * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
  * @returns {Promise<T | undefined>}
