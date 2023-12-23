@@ -25,10 +25,13 @@
     super(socket, ip, server, isBrowser, headers, cookies);
 
       //This is the best place to authenticate the user.
-      if(!AuthUser(cookies?.get("loginToken"))) {
+      if(isBrowser && !AuthUserByBrowser(cookies?.get("loginToken"))) {
         this.kick("Wrong token");
         return;
-      } 
+      }else if (!AuthUserByHeader(headers["authorization"])) {
+        this.kick("Wrong token");
+        return;
+      }
 
       this.clientData = {
         rank: "admin",
