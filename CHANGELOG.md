@@ -5,9 +5,9 @@
 ### Cookies
 
 - The cookies from the WS client's browser now can be accessed via the `cookies` property.
-- You can now set cookies from the serverside if the client is connected from a browser using `setCookie`.
-- You can now delete cookies from the targeted client's browser directly from the serverside using the `removeCookie` function.
-- The client can now sync the cookies to the serverside
+- You can now set cookies from the server-side if the client is connected from a browser using `setCookie`.
+- You can now delete cookies from the targeted client's browser directly from the server-side using the `removeCookie` function.
+- The client can now sync the cookies to the server-side
   - New local event: `onCookieSync`
 
 ### Extendable clients
