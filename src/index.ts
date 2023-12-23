@@ -47,7 +47,7 @@ interface IServerSettings {
   verbose?: boolean;
   /**
    * By giving this property an ILogger interface, you can create your own logger script.
-   * If you give it true, the default logging script will be used.
+   * If you give set true, the default logging script will be used.
    */
   logger?: boolean | ILogger;
   /**
@@ -57,7 +57,7 @@ interface IServerSettings {
 
   /**
    * This event handler gets called before a new WS connection would be created.
-   * If you want to add new headers to the ugprade frame's reponse, return them as an array.
+   * If you want to add new headers to the upgrade frame's reponse, return them as an array.
    * @returns {Array<string>}
    */
   headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string> | void;
