@@ -16,6 +16,7 @@ import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
 import { parse as parseCookie } from "cookie";
+import colors from 'colors';
 
 interface IServerSettings {
   /**
@@ -46,7 +47,7 @@ interface IServerSettings {
    */
   verbose?: boolean;
   /**
-   * By giving this property an ILogger interface, you can create your own logger script.
+   * * You can override the server's default *Logger* system by giving this property an [ILogger](https://zilaws.com/docs/server-api/config#logger) interface. 
    * If you give set true, the default logging script will be used.
    */
   logger?: boolean | ILogger;
@@ -62,21 +63,21 @@ interface IServerSettings {
    */
   headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string> | void;
 
-	/**
-	 * The maximal waiting time for waiters.
+  /**
+   * The maximal waiting time for waiters.
    * Defaults to 800ms
-	 */
-	maxWaiterTime?: number;
+   */
+  maxWaiterTime?: number;
 
-	/**
-	 * Custom client class
-	 */
+  /**
+   * Custom client class
+   */
   clientClass?: new (
     socket: WebSocketClient,
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
-		headers: {[name: string]: string },
+    headers: { [name: string]: string },
     cookies?: Map<string, string>
   ) => ZilaClient;
 }
@@ -142,14 +143,14 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   wss: WebSocketServer;
   VerbLog?: ILogger;
   Logger?: ILogger;
-	maxWaiterTime = 800;
+  maxWaiterTime = 800;
 
   private clientClass: new (
     socket: WebSocketClient,
     ip: string | undefined,
     server: ZilaServer,
     isBrowser: boolean,
-		headers: {[name: string]: string },
+    headers: { [name: string]: string },
     cookies?: Map<string, string>
   ) => ZilaClient;
 
@@ -181,24 +182,51 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
   public readonly settings: IServerSettings;
 
+  /* istanbul ignore next */
+  private async getNewestVersion(): Promise<string> {
+    const data = JSON.parse(await (await fetch("https://registry.npmjs.org/zilaws-server/latest/", {
+      method: "GET"
+    })).text());
+    return data["version"];
+  }
+
+  /* istanbul ignore next */
+  private compareVersions(version1: string, version2: string) {
+    let v1 = version1.split('.').map(Number);
+    let v2 = version2.split('.').map(Number);
+    let len = Math.max(v1.length, v2.length);
+
+    for (let i = 0; i < len; i++) {
+      let part1 = v1[i] || 0;
+      let part2 = v2[i] || 0;
+
+      if (part1 > part2) return 1;
+      if (part1 < part2) return 2;
+    }
+
+    return 0;
+  }
+
   public constructor(settings: IServerSettings) {
     this.settings = settings;
     this.hasrequested = false;
     this.clientClass = settings.clientClass ?? ZilaClient;
-		if(settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
-
+    if (settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
+    
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
       this.VerbLog.log(
         "Verbose logging is enabled. WS error codes' documentation: https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent/code"
-      );
-    }
-
-    if (settings.logger !== undefined) {
-      if (typeof settings.logger == "boolean" && settings.logger) {
-        this.Logger = SimpleLogger;
+        );
       }
-    }
+      
+      if (settings.logger !== undefined) {
+        if (typeof settings.logger == "boolean" && settings.logger) {
+          this.Logger = SimpleLogger;
+        }
+      }
+      
+    this.Logger?.log("Starting server...");
 
     this.wss = new WebSocketServer({
       noServer: true,
@@ -284,14 +312,14 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
-			req.headers
+      req.headers
       let zilaSocket = new this.clientClass(
         socket,
         req.socket.remoteAddress,
         this,
         req.headers["s-type"] != "1",
         //Can't test this with Node.
-				req.headers as {[name: string]: string },
+        req.headers as { [name: string]: string },
         /* istanbul ignore next */
         req.headers.cookie ? new Map(Object.entries(parseCookie(req.headers.cookie))) : new Map()
       );
@@ -339,6 +367,23 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
             `An error has occured: IP: ${getIPAndPort(req)} | Message: ${event.message}\n${event.error}`
           );
         });
+      }
+    });
+
+    /* istanbul ignore next */
+    this.wss.on("listening", async () => {
+      const newestVersion = await this.getNewestVersion();
+      const currentVersion = (await import("../package.json")).version;
+      const comp = this.compareVersions(newestVersion, currentVersion);
+      if (comp == 1) {
+        //This is an old version
+        this.Logger?.log(colors.bgYellow("Warning:") + ` You are running an old version of the ZilaWS server. Your version: ${colors.red(currentVersion)}, newest version: ${colors.green(newestVersion)}
+        \tPlease update your server using the following command: ${colors.underline("npm install zilaws-server@latest")}
+        \tYou might want to update your client too: ${colors.underline("npm install zilaws-client@latest")}`);
+      } else if (comp == 2) {
+        this.Logger?.log(colors.yellow("YOU ARE RUNNING AN UNRELEASED VERSION OF THE ZILAWS SERVER."));
+      }else{
+        this.Logger?.log(`Server running on version: ${colors.green(currentVersion)}`)
       }
     });
   }
@@ -449,21 +494,21 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
    * @returns {Promise<Array<T>>}
    */
   public async broadcastWaiter<T>(identifier: string, ...data: any[]): Promise<Array<T>> {
-      const promises: Array<Promise<T | undefined>> = [];
-  
-      for (const socket of this._clients) {
-        promises.push(
-          socket.waiter<T | undefined>(identifier, ...data)
-        );
-      }
-      
-      const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
-        if(el.status == "fulfilled") {
-          return el.value
-        }
-      });
+    const promises: Array<Promise<T | undefined>> = [];
 
-      return resp as Array<T>;
+    for (const socket of this._clients) {
+      promises.push(
+        socket.waiter<T | undefined>(identifier, ...data)
+      );
+    }
+
+    const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
+      if (el.status == "fulfilled") {
+        return el.value
+      }
+    });
+
+    return resp as Array<T>;
   }
 
   /**
@@ -481,15 +526,15 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
         socket.waiterTimeout<T | undefined>(identifier, maxWaitingTime, ...data)
       );
     }
-    
+
     const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
-      if(el.status == "fulfilled") {
+      if (el.status == "fulfilled") {
         return el.value
       }
     });
 
     return resp as Array<T>;
-}
+  }
 
   /**
    * Registers an eventhandler.
@@ -675,4 +720,4 @@ function getIPAndPort(req: IncomingMessage): string {
   return `${req.socket.remoteAddress}:${req.socket.remotePort}`;
 }
 
-export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders };
+export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders, type WebSocketClient };

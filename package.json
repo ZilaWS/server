@@ -70,6 +70,7 @@
     "zilaws-client": "^1.1.0"
   },
   "dependencies": {
+    "colors": "^1.4.0",
     "cookie": "^0.6.0",
     "ws": "^8.13.0"
   }
