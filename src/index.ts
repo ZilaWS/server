@@ -376,6 +376,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
     });
 
+    /* istanbul ignore next */
     this.baseServer.on("listening", async () => {
       const newestVersion = await this.getNewestVersion();
       const currentVersion = (await import("../package.json")).version;
