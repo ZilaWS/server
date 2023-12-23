@@ -62,6 +62,15 @@ interface IServerSettings {
    */
   headerEvent?: (recievedHeaders: IncomingHttpHeaders) => Array<string> | void;
 
+	/**
+	 * The maximal waiting time for waiters.
+   * Defaults to 800ms
+	 */
+	maxWaiterTime?: number;
+
+	/**
+	 * Custom client class
+	 */
   clientClass?: new (
     socket: WebSocketClient,
     ip: string | undefined,
@@ -133,6 +142,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   wss: WebSocketServer;
   VerbLog?: ILogger;
   Logger?: ILogger;
+	maxWaiterTime = 800;
 
   private clientClass: new (
     socket: WebSocketClient,
@@ -175,6 +185,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     this.settings = settings;
     this.hasrequested = false;
     this.clientClass = settings.clientClass ?? ZilaClient;
+		if(settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
 
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
@@ -408,26 +419,77 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
   /**
    * Calls an eventhandler on the clientside for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+   * If the client doesn't respond in 
    * @param {T} socket The websocket client
    * @param {string} identifier The callback's name on the clientside.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
-   * @returns {Promise<unknown>}
+   * @returns {Promise<T | undefined>}
    */
-  public waiter(socket: ZilaClient, identifier: string, ...data: any[]): Promise<unknown> {
-    return socket.waiter(identifier, ...data);
+  public waiter<T>(socket: ZilaClient, identifier: string, ...data: any[]): Promise<T | undefined> {
+    return socket.waiter<T>(identifier, ...data);
   }
 
-  public broadcastWaiter(identifier: string, maxWaitTime: number, ...data: any[]): Array<Promise<unknown>> {
-    const promises: Array<Promise<unknown>> = [];
+  /**
+ * Calls an eventhandler on the clientside for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+ * @param {T} socket The websocket client
+ * @param {string} identifier The callback's name on the clientside.
+ * @param {number} maxWaitingTime The maximum time this waiter will wait for the client. Defaults to the server's maxWaiterTime.
+ * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
+ * @returns {Promise<T | undefined>}
+ */
+  public waiterTimeout<T>(socket: ZilaClient, identifier: string, maxWaitingTime: number, ...data: any[]): Promise<T | undefined> {
+    return socket.waiterTimeout<T>(identifier, maxWaitingTime, ...data);
+  }
+
+  /**
+   * Sends a waiter event to all of the connected clients
+   * The maxWaiting time is the server's maxWaiterTime
+   * @param identifier 
+   * @param data 
+   * @returns {Promise<Array<T>>}
+   */
+  public async broadcastWaiter<T>(identifier: string, ...data: any[]): Promise<Array<T>> {
+      const promises: Array<Promise<T | undefined>> = [];
+  
+      for (const socket of this._clients) {
+        promises.push(
+          socket.waiter<T | undefined>(identifier, ...data)
+        );
+      }
+      
+      const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
+        if(el.status == "fulfilled") {
+          return el.value
+        }
+      });
+
+      return resp as Array<T>;
+  }
+
+  /**
+   * Sends a waiter event to all of the connected clients.
+   * @param identifier 
+   * @param data 
+   * @param maxWaitingTime Max waiting time for each client in miliseconds.
+   * @returns {Promise<Array<T>>}
+   */
+  public async broadcastWaiterTimeout<T>(identifier: string, maxWaitingTime: number, ...data: any[]): Promise<Array<T>> {
+    const promises: Array<Promise<T | undefined>> = [];
 
     for (const socket of this._clients) {
       promises.push(
-        Promise.race([socket.waiter(identifier, ...data), new Promise((_r, rej) => setTimeout(rej, maxWaitTime))])
+        socket.waiterTimeout<T | undefined>(identifier, maxWaitingTime, ...data)
       );
     }
+    
+    const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
+      if(el.status == "fulfilled") {
+        return el.value
+      }
+    });
 
-    return promises;
-  }
+    return resp as Array<T>;
+}
 
   /**
    * Registers an eventhandler.
@@ -436,7 +498,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
    * @param identifier The eventhandler's name
    * @param callback The eventhandler
    */
-  public setMessageHandler(identifier: string, callback: (socket: T, ...args: any[]) => void): void {
+  public setMessageHandler(identifier: string, callback: ZilaWSCallback<T>): void {
     this.callbacks[identifier] = callback as ZilaWSCallback<ZilaClient>;
   }
 
@@ -515,7 +577,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
           reject(err.message);
         } else {
           this.baseServer.close((bError) => {
-            //This can't be tested without setting the baseServer property to public.
+            //This can't be tested without setting the baseServer property to be public.
             /* istanbul ignore next */
             if (bError) {
               reject(bError.message);

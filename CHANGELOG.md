@@ -52,13 +52,18 @@
   });
   ```
 
+### Waiting for clients
+
+- This update solves a major security issue waiters
+- Two new functions: `waiterTimeout` and `broadcastWaiterTimeout`. Both has a *maxWaitingTime* parameter. This parameter constains the max time the server should wait for the client / each connected client
+- The `waiter`'s and `waiterBroadcast`'s now has max waiting time and it is the server's `maxWaiterTime` setting.
+- A server's `maxWaiterTime` can be set in the settings upon server creation or directly using the server's corrresponding property.
+
 ### Others
 
 - Checks for passing a function down to a client has been removed. The built-in JSON serializer ingores functions by default.
-- **Breaking change:** broadcastWaiter
-  - Fixed a bug where if one of the clients didn't respond, this Promise would not resolve.
-  - This function now requires an extra `maxWaitTime` parameter.
-- A set of the server's actively connected clients can now be accessed through a the `clients` property of the corresponding server.
+- An array of the server's actively connected clients can now be accessed through a the `clients` property of the corresponding server.
 - ILogger interface typeguard for text parameter.
 - Added property `isBrowser` to ZilaClient. This determines if the client's environment is a browser on not.
 - The WS server is now powered with a seperate HTTP/HTTPS server.
+- If the client is already banned by the server while connecting, the connection gets terminated about 4 times faster.

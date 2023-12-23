@@ -108,10 +108,10 @@ describe("Non-Secure", () => {
 
   test("Client Async waiter", async () => {
     expect(await client.waiter("serverSample", "serverSampleText")).toEqual<string>("serverSampleText success");
-  }, 15000);
+  });
 
   test("Server Async Waiter", async () => {
-    const resp = await server.waiter(clientSocket, "clientSample", "sampleText");
+    const resp = await server.waiter<string>(clientSocket, "clientSample", "sampleText");
     expect(resp).toEqual<string>("sampleText success");
   });
 
@@ -126,6 +126,25 @@ describe("Non-Secure", () => {
     client.send("asd", 123);
   });
 
+  test("Waiter not responding in time", async () => {
+    const resp = await server.waiter<WSStatus[]>(clientSocket, "This event id does not exist on the client");
+    expect(resp).toBe(undefined);
+  }, 1200);
+
+  test("WaiterTimeout not responding in time", async () => {
+    const resp = await server.waiterTimeout<WSStatus[]>(clientSocket, "This event id does not exist on the client", 300);
+    expect(resp).toBe(undefined);
+  }, 400);
+
+  test("WaiterTimeout responding in time", async () => {
+    client.onceMessageHandler("This event exists", (data) => {
+      return data + '!';
+    });
+
+    const resp = await server.waiterTimeout<WSStatus[]>(clientSocket, "This event exists", 300, "Some data");
+    expect(resp).toBe("Some data!");
+  }, 400);
+
   test("Broadcast Waiter", async () => {
     client.onceMessageHandler("BroadcastWaiter", (data: string) => {
       expect(data).toBe("Broadcast data");
@@ -136,28 +155,51 @@ describe("Non-Secure", () => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
-    locClient.onceMessageHandler("BroadcastWaiter", async (data: string) => {
+    locClient.onceMessageHandler("BroadcastWaiter", (data: string) => {
+      expect(data).toBe("Broadcast data");
+      return "Data2";
+    });
+
+    const resp = (await server.broadcastWaiter<string>("BroadcastWaiter", "Broadcast data"));
+    locClient.disconnect();
+
+      expect(resp).toContain("Data1");
+      expect(resp).toContain("Data2");
+  });
+
+  test("Broadcast Waiter with timeout responding in time", async () => {
+    client.onceMessageHandler("BroadcastWaiterTimeout", (data: string) => {
+      expect(data).toBe("Broadcast data");
+      return "Data1";
+    });
+
+    const locClient = await connectTo("ws://127.0.0.1:6589", (reason) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
+
+    locClient.onceMessageHandler("BroadcastWaiterTimeout", async (data: string) => {
       expect(data).toBe("Broadcast data");
       return await new Promise((res) => {
         res("Data2");
       });
     });
 
-    locClient.onceMessageHandler("BroadcastWaiter", (data: string) => {
-      expect(data).toBe("Broadcast data");
-      return "Data2";
-    });
-
-    const resp = (
-      await Promise.allSettled(server.broadcastWaiter("BroadcastWaiter", 50, "Broadcast data"))
-    ).filter((el) => el.status == "fulfilled");
+    const resp = (await server.broadcastWaiterTimeout<string>("BroadcastWaiterTimeout", 50, "Broadcast data"));
     locClient.disconnect();
 
-    if (resp[0].status == "fulfilled" && resp[1].status == "fulfilled") {
-      expect(new Set([resp[0].value, resp[1].value])).toEqual(new Set(["Data1", "Data2"]));
-    } else {
-      fail("A promise was not fulfilled");
+      expect(resp).toContain("Data1");
+      expect(resp).toContain("Data2");
+  });
+
+  test("Broadcast Waiter with timeout not responding in time", async () => {
+    const resp = (await server.broadcastWaiterTimeout<string>("NonExistentIdentifier", 50, "Broadcast data"));
+    const testArray: any[] = [];
+    
+    for(let i = 0; i < server.clients.length; i++) {
+      testArray.push(undefined);
     }
+    
+    expect(resp).toEqual(testArray);
   });
 
   test("Broadcast Send", async () => {
@@ -240,6 +282,7 @@ describe("Simple Server Stop", () => {
       port: 6590,
       logger: true,
       verbose: true,
+      maxWaiterTime: 4000
     });
   });
 
