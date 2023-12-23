@@ -16,7 +16,7 @@ import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
 import { parse as parseCookie } from "cookie";
-import colors from 'colors';
+import colors from "colors";
 
 interface IServerSettings {
   /**
@@ -47,7 +47,7 @@ interface IServerSettings {
    */
   verbose?: boolean;
   /**
-   * * You can override the server's default *Logger* system by giving this property an [ILogger](https://zilaws.com/docs/server-api/config#logger) interface. 
+   * * You can override the server's default *Logger* system by giving this property an [ILogger](https://zilaws.com/docs/server-api/config#logger) interface.
    * If you give set true, the default logging script will be used.
    */
   logger?: boolean | ILogger;
@@ -184,16 +184,20 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
   /* istanbul ignore next */
   private async getNewestVersion(): Promise<string> {
-    const data = JSON.parse(await (await fetch("https://registry.npmjs.org/zilaws-server/latest/", {
-      method: "GET"
-    })).text());
+    const data = JSON.parse(
+      await (
+        await fetch("https://registry.npmjs.org/zilaws-server/latest/", {
+          method: "GET",
+        })
+      ).text()
+    );
     return data["version"];
   }
 
   /* istanbul ignore next */
   private compareVersions(version1: string, version2: string) {
-    let v1 = version1.split('.').map(Number);
-    let v2 = version2.split('.').map(Number);
+    let v1 = version1.split(".").map(Number);
+    let v2 = version2.split(".").map(Number);
     let len = Math.max(v1.length, v2.length);
 
     for (let i = 0; i < len; i++) {
@@ -212,20 +216,20 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     this.hasrequested = false;
     this.clientClass = settings.clientClass ?? ZilaClient;
     if (settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
-    
+
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
       this.VerbLog.log(
         "Verbose logging is enabled. WS error codes' documentation: https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent/code"
-        );
+      );
+    }
+
+    if (settings.logger !== undefined) {
+      if (typeof settings.logger == "boolean" && settings.logger) {
+        this.Logger = SimpleLogger;
       }
-      
-      if (settings.logger !== undefined) {
-        if (typeof settings.logger == "boolean" && settings.logger) {
-          this.Logger = SimpleLogger;
-        }
-      }
-      
+    }
+
     this.Logger?.log("Starting server...");
 
     this.wss = new WebSocketServer({
@@ -289,7 +293,8 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     this._status = WSStatus.OPEN;
 
     this.Logger?.log(
-      `Ready for incoming connections on port ${settings.port} with SSL ${settings.https ? "enabled" : "disabled"
+      `Ready for incoming connections on port ${settings.port} with SSL ${
+        settings.https ? "enabled" : "disabled"
       }.`
     );
 
@@ -312,7 +317,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
-      req.headers
+      req.headers;
       let zilaSocket = new this.clientClass(
         socket,
         req.socket.remoteAddress,
@@ -353,7 +358,8 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
         if (this.VerbLog) {
           this.VerbLog.log(
-            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${event.type
+            `A client has been disconnected. IP: ${getIPAndPort(req)} | Code: ${event.code} | Type: ${
+              event.type
             } | wasClean: ${event.wasClean}`
           );
         } else if (this.Logger) {
@@ -370,20 +376,26 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
     });
 
-    /* istanbul ignore next */
-    this.wss.on("listening", async () => {
+    this.baseServer.on("listening", async () => {
       const newestVersion = await this.getNewestVersion();
       const currentVersion = (await import("../package.json")).version;
       const comp = this.compareVersions(newestVersion, currentVersion);
       if (comp == 1) {
         //This is an old version
-        this.Logger?.log(colors.bgYellow("Warning:") + ` You are running an old version of the ZilaWS server. Your version: ${colors.red(currentVersion)}, newest version: ${colors.green(newestVersion)}
-        \tPlease update your server using the following command: ${colors.underline("npm install zilaws-server@latest")}
-        \tYou might want to update your client too: ${colors.underline("npm install zilaws-client@latest")}`);
+        this.Logger?.log(
+          colors.bgYellow("Warning:") +
+            ` You are running an old version of the ZilaWS server. Your version: ${colors.red(
+              currentVersion
+            )}, newest version: ${colors.green(newestVersion)}
+        \tPlease update your server using the following command: ${colors.underline(
+          "npm install zilaws-server@latest"
+        )}
+        \tYou might want to update your client too: ${colors.underline("npm install zilaws-client@latest")}`
+        );
       } else if (comp == 2) {
         this.Logger?.log(colors.yellow("YOU ARE RUNNING AN UNRELEASED VERSION OF THE ZILAWS SERVER."));
-      }else{
-        this.Logger?.log(`Server running on version: ${colors.green(currentVersion)}`)
+      } else {
+        this.Logger?.log(`Server running on version: ${colors.green(currentVersion)}`);
       }
     });
   }
@@ -464,7 +476,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
   /**
    * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
-   * If the client doesn't respond in 
+   * If the client doesn't respond in
    * @param {T} socket The websocket client
    * @param {string} identifier The callback's name on the client-side.
    * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
@@ -475,65 +487,78 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   }
 
   /**
- * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
- * @param {T} socket The websocket client
- * @param {string} identifier The callback's name on the client-side.
- * @param {number} maxWaitingTime The maximum time this waiter will wait for the client. Defaults to the server's maxWaiterTime.
- * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
- * @returns {Promise<T | undefined>}
- */
-  public waiterTimeout<T>(socket: ZilaClient, identifier: string, maxWaitingTime: number, ...data: any[]): Promise<T | undefined> {
+   * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+   * @param {T} socket The websocket client
+   * @param {string} identifier The callback's name on the client-side.
+   * @param {number} maxWaitingTime The maximum time this waiter will wait for the client. Defaults to the server's maxWaiterTime.
+   * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
+   * @returns {Promise<T | undefined>}
+   */
+  public waiterTimeout<T>(
+    socket: ZilaClient,
+    identifier: string,
+    maxWaitingTime: number,
+    ...data: any[]
+  ): Promise<T | undefined> {
     return socket.waiterTimeout<T>(identifier, maxWaitingTime, ...data);
   }
 
   /**
    * Sends a waiter event to all of the connected clients
    * The maxWaiting time is the server's maxWaiterTime
-   * @param identifier 
-   * @param data 
+   * @param identifier
+   * @param data
    * @returns {Promise<Array<T>>}
    */
   public async broadcastWaiter<T>(identifier: string, ...data: any[]): Promise<Array<T>> {
     const promises: Array<Promise<T | undefined>> = [];
 
     for (const socket of this._clients) {
-      promises.push(
-        socket.waiter<T | undefined>(identifier, ...data)
-      );
+      promises.push(socket.waiter<T | undefined>(identifier, ...data));
     }
 
-    const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
-      if (el.status == "fulfilled") {
-        return el.value
-      }
-    });
+    const settled = await Promise.allSettled<T | undefined>(promises);
 
-    return resp as Array<T>;
+    let responses: Array<T> = [];
+
+    for (const resp of settled) {
+      if (resp.status == "fulfilled" && resp.value !== undefined) {
+        responses.push(resp.value);
+      }
+    }
+
+    return responses;
   }
 
   /**
    * Sends a waiter event to all of the connected clients.
-   * @param identifier 
-   * @param data 
+   * @param identifier
+   * @param data
    * @param maxWaitingTime Max waiting time for each client in miliseconds.
    * @returns {Promise<Array<T>>}
    */
-  public async broadcastWaiterTimeout<T>(identifier: string, maxWaitingTime: number, ...data: any[]): Promise<Array<T>> {
+  public async broadcastWaiterTimeout<T>(
+    identifier: string,
+    maxWaitingTime: number,
+    ...data: any[]
+  ): Promise<Array<T>> {
     const promises: Array<Promise<T | undefined>> = [];
 
     for (const socket of this._clients) {
-      promises.push(
-        socket.waiterTimeout<T | undefined>(identifier, maxWaitingTime, ...data)
-      );
+      promises.push(socket.waiterTimeout<T | undefined>(identifier, maxWaitingTime, ...data));
     }
 
-    const resp = (await Promise.allSettled<T | undefined>(promises)).map(el => {
-      if (el.status == "fulfilled") {
-        return el.value
-      }
-    });
+    const settled = await Promise.allSettled<T | undefined>(promises);
 
-    return resp as Array<T>;
+    let responses: Array<T> = [];
+
+    for (const resp of settled) {
+      if (resp.status == "fulfilled" && resp.value !== undefined) {
+        responses.push(resp.value);
+      }
+    }
+
+    return responses;
   }
 
   /**

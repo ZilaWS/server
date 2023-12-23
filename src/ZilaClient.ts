@@ -10,7 +10,7 @@ import { WebSocket as WebSocketClient } from "ws";
 import { randomInt, randomUUID } from "crypto";
 import { ZilaServer, WSStatus } from ".";
 import Cookie from "cookie";
-import { IncomingHttpHeaders } from 'http';
+import { IncomingHttpHeaders } from "http";
 import { ICookie } from "./ICookie";
 
 export default class ZilaClient {
@@ -152,7 +152,7 @@ export default class ZilaClient {
 
       resolve(
         Promise.any([
-          new Promise(r => {
+          new Promise((r) => {
             this.setMessageHandler(uuid, (args: any[]): void => {
               clearTimeout(timeout);
               this.removeMessageHandler(uuid);
@@ -163,7 +163,7 @@ export default class ZilaClient {
             timeout = setTimeout(() => {
               _r(undefined);
             }, this.server.maxWaiterTime);
-          })
+          }),
         ]) as Promise<T | undefined>
       );
 
@@ -172,12 +172,12 @@ export default class ZilaClient {
   }
 
   /**
- * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
- * @param {string} identifier The callback's name on the client-side.
- * @param {number} maxWaitingTime The maximum time this waiter will wait for the client.
- * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
- * @returns {Promise<T | undefined>}
- */
+   * Calls an eventhandler on the client-side for the specified client. Gets a value of T type back from the client or just waits for the eventhandler to finish.
+   * @param {string} identifier The callback's name on the client-side.
+   * @param {number} maxWaitingTime The maximum time this waiter will wait for the client.
+   * @param {any|undefined} data Arguments that shall be passed to the callback as parameters (optional)
+   * @returns {Promise<T | undefined>}
+   */
   public waiterTimeout<T>(identifier: string, maxWaitingTime: number, ...data: any[]): Promise<T | undefined> {
     return new Promise(async (resolve) => {
       const uuid = randomUUID();
@@ -186,7 +186,7 @@ export default class ZilaClient {
 
       resolve(
         Promise.any([
-          new Promise(r => {
+          new Promise((r) => {
             this.setMessageHandler(uuid, (args: any[]): void => {
               clearTimeout(timeout);
               this.removeMessageHandler(uuid);
@@ -197,7 +197,7 @@ export default class ZilaClient {
             timeout = setTimeout(() => {
               _r(undefined);
             }, maxWaitingTime);
-          })
+          }),
         ]) as Promise<T | undefined>
       );
 
