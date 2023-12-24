@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package",
   "name": "zilaws-server",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "ZilaWS is a blazingly fast and very lightweight library that provides an extremely easy-to-use way to transmit data via websockets between client-side and server-side using eventhandlers and async waiters.",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
@@ -54,7 +54,6 @@
   "devDependencies": {
     "@types/cookie": "^0.6.0",
     "@types/jest": "^29.5.4",
-    "@types/ws": "^8.5.5",
     "jest": "^29.6.4",
     "jest-coverage-badges-ts": "^0.1.8",
     "prettier": "^3.0.3",
@@ -69,6 +68,8 @@
     "zilaws-client": "^2.0.0"
   },
   "dependencies": {
+    "@types/node": "^20.10.5",
+    "@types/ws": "^8.5.5",
     "cookie": "^0.6.0",
     "ws": "^8.13.0"
   }
