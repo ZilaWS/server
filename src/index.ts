@@ -16,7 +16,6 @@ import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
 import { parse as parseCookie } from "cookie";
-import colors from "colors";
 
 interface IServerSettings {
   /**
@@ -375,30 +374,6 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
         });
       }
     });
-
-    /* istanbul ignore next */
-    this.baseServer.on("listening", async () => {
-      const newestVersion = await this.getNewestVersion();
-      const currentVersion = (await import("../package.json")).version;
-      const comp = this.compareVersions(newestVersion, currentVersion);
-      if (comp == 1) {
-        //This is an old version
-        this.Logger?.log(
-          colors.bgYellow("Warning:") +
-            ` You are running an old version of the ZilaWS server. Your version: ${colors.red(
-              currentVersion
-            )}, newest version: ${colors.green(newestVersion)}
-        \tPlease update your server using the following command: ${colors.underline(
-          "npm install zilaws-server@latest"
-        )}
-        \tYou might want to update your client too: ${colors.underline("npm install zilaws-client@latest")}`
-        );
-      } else if (comp == 2) {
-        this.Logger?.log(colors.yellow("YOU ARE RUNNING AN UNRELEASED VERSION OF THE ZILAWS SERVER."));
-      } else {
-        this.Logger?.log(`Server running on version: ${colors.green(currentVersion)}`);
-      }
-    });
   }
 
   /**
@@ -746,4 +721,4 @@ function getIPAndPort(req: IncomingMessage): string {
   return `${req.socket.remoteAddress}:${req.socket.remotePort}`;
 }
 
-export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders, type WebSocketClient };
+export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders, WebSocketClient };
