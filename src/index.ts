@@ -81,14 +81,14 @@ interface IServerSettings {
   ) => ZilaClient;
 }
 
-interface IServerEvents {
+interface IServerEvents<T extends ZilaClient> {
   /**
    * Runs every time a client connects.
    * @param socket
    * @param req
    * @returns
    */
-  onClientConnect: (socket: ZilaClient) => void;
+  onClientConnect: (socket: T) => void;
 
   /**
    * Runs every time a client disconnects
@@ -97,7 +97,7 @@ interface IServerEvents {
    * @param reason
    * @returns
    */
-  onClientDisconnect: (socket: ZilaClient, code: number, reason: string) => void;
+  onClientDisconnect: (socket: T, code: number, reason: string) => void;
 
   /**
    * Runs every time after a the server processes a message from the client.
@@ -106,7 +106,7 @@ interface IServerEvents {
    * @param message If the message object is instance of T, this param will be T, undefined if not.
    * @returns
    */
-  onClientMessage: <T>(socket: ZilaClient, eventHandlerName: string, messageDataObject: T | undefined) => void;
+  onClientMessage: <T>(socket: T, eventHandlerName: string, messageDataObject: T | undefined) => void;
 
   /**
    * Runs every time a server recieves a message from the client before any registered callback could run
@@ -115,10 +115,10 @@ interface IServerEvents {
    * @param message If the message object is instance of T, this param will be T, undefined if not.
    * @returns
    */
-  onClientMessageBeforeCallback: <T>(
-    socket: ZilaClient,
+  onClientMessageBeforeCallback: <U>(
+    socket: T,
     eventHandlerName: string,
-    messageDataObject: T | undefined
+    messageDataObject: U | undefined
   ) => void;
 
   /**
@@ -127,7 +127,7 @@ interface IServerEvents {
    * @param rawMessage Not processed, raw message from the client. (Hopefully JSON)
    * @returns
    */
-  onClientRawMessageBeforeCallback: (socket: ZilaClient, rawMessage: string) => void;
+  onClientRawMessageBeforeCallback: (socket: T, rawMessage: string) => void;
 
   /**
    * Runs when a client calls `syncCookies`.
@@ -135,7 +135,7 @@ interface IServerEvents {
    * @param cookiesBeforeSync The cookies before syncing
    * @returns
    */
-  onCookieSync: (socket: ZilaClient, cookiesBeforeSync: Map<string, string>) => void;
+  onCookieSync: (socket: T, cookiesBeforeSync: Map<string, string>) => void;
 }
 
 export class ZilaServer<T extends ZilaClient = ZilaClient> {
@@ -147,7 +147,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   private clientClass: new (
     socket: WebSocketClient,
     ip: string | undefined,
-    server: ZilaServer,
+    server: ZilaServer<T>,
     isBrowser: boolean,
     headers: { [name: string]: string },
     cookies?: Map<string, string>
@@ -158,7 +158,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   private baseServer: ServerHTTP | ServerHTTPS;
 
   private serverEvents: {
-    [K in keyof IServerEvents]?: Array<IServerEvents[K]> | undefined;
+    [K in keyof IServerEvents<T>]?: Array<IServerEvents<T>[K]> | undefined;
   } = {};
 
   private readonly callbacks: { [id: string]: ZilaWSCallback<ZilaClient> | undefined } = {};
@@ -213,6 +213,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   public constructor(settings: IServerSettings) {
     this.settings = settings;
     this.hasrequested = false;
+    // @ts-ignore
     this.clientClass = settings.clientClass ?? ZilaClient;
     if (settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
 
@@ -332,7 +333,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
       if (this.serverEvents.onClientConnect) {
         for (const cb of this.serverEvents.onClientConnect) {
-          cb(zilaSocket);
+          cb(zilaSocket as T);
         }
       }
 
@@ -340,7 +341,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
         const datastring = data.toString();
         if (this.serverEvents.onClientRawMessageBeforeCallback) {
           for (const cb of this.serverEvents.onClientRawMessageBeforeCallback) {
-            cb(zilaSocket, datastring);
+            cb(zilaSocket as T, datastring);
           }
         }
 
@@ -351,7 +352,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       zilaSocket.socket.addEventListener("close", (event) => {
         if (this.serverEvents.onClientDisconnect) {
           for (const cb of this.serverEvents.onClientDisconnect) {
-            cb(zilaSocket, event.code, event.reason);
+            cb(zilaSocket as T, event.code, event.reason);
           }
         }
 
@@ -381,7 +382,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
    * @param eventType
    * @param callback
    */
-  public addEventListener<K extends keyof IServerEvents>(eventType: K, callback: IServerEvents[K]) {
+  public addEventListener<K extends keyof IServerEvents<T>>(eventType: K, callback: IServerEvents<T>[K]) {
     let arr = this.serverEvents[eventType];
     if (!arr) {
       arr = [];
@@ -399,7 +400,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
    * @param callback
    * @returns
    */
-  public removeEventListener<K extends keyof IServerEvents>(eventType: K, callback: IServerEvents[K]) {
+  public removeEventListener<K extends keyof IServerEvents<T>>(eventType: K, callback: IServerEvents<T>[K]) {
     let arr = this.serverEvents[eventType];
     if (!arr) return;
 
@@ -417,7 +418,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
    * @param eventType
    * @param callback
    */
-  public onceEventListener<K extends keyof IServerEvents>(eventType: K, callback: IServerEvents[K]) {
+  public onceEventListener<K extends keyof IServerEvents<T>>(eventType: K, callback: IServerEvents<T>[K]) {
     const that = this;
 
     function onceCallback(...args: any[]) {
@@ -673,7 +674,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
               if (beforeCookies) {
                 for (const cb of this.serverEvents.onCookieSync!) {
-                  cb(socket, beforeCookies);
+                  cb(socket as T, beforeCookies);
                 }
               }
             } catch {
@@ -689,13 +690,13 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
       if (this.serverEvents.onClientRawMessageBeforeCallback) {
         for (const cb of this.serverEvents.onClientRawMessageBeforeCallback) {
-          cb(socket, msg);
+          cb(socket as T, msg);
         }
       }
 
       if (this.serverEvents.onClientMessageBeforeCallback) {
         for (const cb of this.serverEvents.onClientMessageBeforeCallback) {
-          cb(socket, msgObj.identifier, msgObj.message);
+          cb(socket as T, msgObj.identifier, msgObj.message);
         }
       }
 
