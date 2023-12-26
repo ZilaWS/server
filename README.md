@@ -9,11 +9,11 @@ ZilaWS is a blazingly fast and very lightweight library that provides an extreme
 ![coverage label for lines of code](./.coverage-badges/badge-lines.svg)
 ![coverage label for statements](./.coverage-badges/badge-statements.svg)
 
-<img src="logo.png" width="240">
+<img src="logo.png" alt="ZilaWS Logo" width="240">
 
 ## [Documentation](https://zilaws.com)
 
-## Looking for the [zilaws-server](https://www.npmjs.com/package/zilaws-server) package?</h2>
+## Looking for the [zilaws-client](https://www.npmjs.com/package/zilaws-client) package?</h2>
 
 The ZilaWS Server can accept WS connections from non ZilaWS clients but won't work as expected.
 
@@ -30,7 +30,7 @@ There are also [broadcastWaiters](https://zilaws.com/docs/waiters#broadcastwaite
 
 Regular waiters wait for a response for the amount of time specified by the `maxWaiterTime` property. This is a property of the ZilaServer class. This property can be set while creating the server through the options object or anytime with its property.
 
-* `identifier`: The name of the [MessageHandler](https://zilaws.com/docs/server-api/recieving-data#waiting-for-data) on the other side of the connection. 
+* `identifier`: The name of the [MessageHandler](https://zilaws.com/docs/server-api/recieving-data#waiting-for-data) on the other side of the connection.
 * `...data`: A waiter (or a send) can be given any number of any data.
 
 ```ts

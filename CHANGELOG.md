@@ -1,3 +1,3 @@
-# v2.0.4
+# v2.0.5
 
-* README changes
+* README fix
