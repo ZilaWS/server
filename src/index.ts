@@ -317,7 +317,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       }
 
       this.Logger?.log(`A client has connected: ${getIPAndPort(req)}`);
-      req.headers;
+
       let zilaSocket = new this.clientClass(
         socket,
         req.socket.remoteAddress,
