@@ -17,7 +17,7 @@ import { IWSMessage } from "./IWSMessage";
 import { ZilaWSCallback } from "./ZilaWSCallback";
 import { parse as parseCookie } from "cookie";
 
-interface IServerSettings {
+export interface IServerSettings {
   /**
    * The port of the WebSocket server
    */
@@ -81,7 +81,7 @@ interface IServerSettings {
   ) => ZilaClient;
 }
 
-interface IServerEvents<T extends ZilaClient> {
+export interface IServerEvents<T extends ZilaClient> {
   /**
    * Runs every time a client connects.
    * @param socket
@@ -191,23 +191,6 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       ).text()
     );
     return data["version"];
-  }
-
-  /* istanbul ignore next */
-  private compareVersions(version1: string, version2: string) {
-    let v1 = version1.split(".").map(Number);
-    let v2 = version2.split(".").map(Number);
-    let len = Math.max(v1.length, v2.length);
-
-    for (let i = 0; i < len; i++) {
-      let part1 = v1[i] || 0;
-      let part2 = v2[i] || 0;
-
-      if (part1 > part2) return 1;
-      if (part1 < part2) return 2;
-    }
-
-    return 0;
   }
 
   public constructor(settings: IServerSettings) {
@@ -722,4 +705,4 @@ function getIPAndPort(req: IncomingMessage): string {
   return `${req.socket.remoteAddress}:${req.socket.remotePort}`;
 }
 
-export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders, WebSocketClient };
+export { ZilaClient, CloseCodes, WSStatus, IncomingHttpHeaders, WebSocketClient, ZilaWSCallback };

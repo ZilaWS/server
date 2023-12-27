@@ -15,7 +15,7 @@ ZilaWS is a blazingly fast and very lightweight library that provides an extreme
 
 ## Looking for the [zilaws-client](https://www.npmjs.com/package/zilaws-client) package?</h2>
 
-The ZilaWS Server can accept WS connections from non ZilaWS clients but won't work as expected.
+The ZilaWS Server can accept WS connections from non-ZilaWS clients but won't work as expected.
 
 ## Waiters
 
@@ -126,6 +126,55 @@ const server = new ZilaServer<MyClient>({
 server.onceMessageHandler("Anything", (socket) => {
     socket.clientData.rank == "admin"; //--> true
     socket.clientData.username == "SomeUsername"; //--> true
+});
+```
+
+## Extending the ZilaServer class
+
+You also have the ability to extend the ZilaServer class if you need to. This comes in handy if for example you need to convert data automatically.
+
+```ts
+import { IServerSettings, ZilaClient, ZilaServer, ZilaWSCallback } from "zilaws-server";
+
+enum MessageHandlers {
+    Register,
+    Login,
+    //...
+}
+
+class MyServer<T extends ZilaClient> extends ZilaServer<T> {
+    constructor(settings: IServerSettings) {
+        super(settings);
+    }
+
+    setMessageHandler(identifier: MessageHandlers | string, callback: ZilaWSCallback<T>): void {
+        super.setMessageHandler(identifier.toString(), callback);
+    }
+}
+
+const server = new MyServer<MyClient>({
+    port: 80,
+    clientClass: MyClient
+});
+
+server.setMessageHandler(MessageHandlers.Login, async (socket: MyClient, username: string, password: string) => {
+    //Logging in a user
+    const dbUser = await CheckLoginCredentials(username, password);
+    
+    if(dbUser) {
+        const loginToken = generateToken();
+        socket.setCookie({
+            name: "LoginToken",
+            value: loginToken,
+            expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+        });
+
+        socket.clientData = dbUser;
+
+        return "SUCCESS";
+    }else{
+        return "BAD_CREDENTIALS";
+    }
 });
 ```
 
