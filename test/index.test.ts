@@ -29,7 +29,7 @@ class MyClient extends ZilaClient {
 describe("Non-Secure", () => {
   let client: ZilaConnection;
   let server: ZilaServer<MyClient>;
-  let clientSocket: ZilaClient;
+  let clientSocket: MyClient;
 
   beforeAll(async () => {
     server = new ZilaServer<MyClient>({
