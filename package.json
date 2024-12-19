@@ -70,7 +70,7 @@
   "dependencies": {
     "@types/node": "^20.11.17",
     "@types/ws": "^8.5.10",
-    "cookie": "^0.6.0",
+    "cookie": "^0.7.0",
     "ws": "^8.16.0"
   }
 }
