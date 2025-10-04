@@ -1,0 +1,6 @@
+[test]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = [
+  "src/wrappers/NodeServerWrapper.ts",
+  "**/dist/**/*.*js",
+]
