@@ -3,19 +3,19 @@ name: Test
 on:
   push:
     paths-ignore:
-      - 'docs/**'
-      - 'README.md'
-      - 'LICENSE'
-      - '.editorconfig'
+      - "docs/**"
+      - "README.md"
+      - "LICENSE"
+      - ".editorconfig"
     branches:
       - main
       - master
   pull_request:
     paths-ignore:
-      - 'docs/**'
-      - 'README.md'
-      - 'LICENSE'
-      - '.editorconfig'
+      - "docs/**"
+      - "README.md"
+      - "LICENSE"
+      - ".editorconfig"
     branches:
       - main
       - master
@@ -28,6 +28,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-22.04
+    env:
+      PUPPETEER_CACHE_DIR: ${{ github.workspace }}/.cache/puppeteer
     steps:
       - name: Checkout server
         uses: actions/checkout@v4
@@ -96,6 +98,7 @@ jobs:
             libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
             libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
             libgbm1 libasound2 libpango-1.0-0 libcairo2 libatspi2.0-0
+          rm -rf "$PUPPETEER_CACHE_DIR/chrome"
           bunx puppeteer browsers install chrome
 
       - name: Run server tests (bun)
