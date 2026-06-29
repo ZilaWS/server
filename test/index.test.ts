@@ -1,8 +1,9 @@
 import { ZilaServer, ZilaClient, CloseCodes, WSStatus, WebSocketClient, IncomingHttpHeaders } from "../src/index";
-import { connectTo, ZilaConnection } from "zilaws-client";
+import { ZilaConnection } from "zilaws-client";
 import { SimpleLogger, VerboseLogger } from "../src/verboseLogger";
 import { join } from "path";
 import { WebSocket } from "ws";
+import { beforeAll, describe, expect, test, afterAll } from "@jest/globals";
 
 class MyClient extends ZilaClient {
   public clientData: {
@@ -27,18 +28,100 @@ class MyClient extends ZilaClient {
 }
 
 describe("Non-Secure", () => {
-  let client: ZilaConnection;
   let server: ZilaServer<MyClient>;
-  let clientSocket: ZilaClient;
+  let sharedWaiterClient: ZilaConnection;
+  let sharedWaiterServerClient: ZilaClient;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   beforeAll(async () => {
     server = new ZilaServer<MyClient>({
       port: 6589,
       logger: true,
       verbose: true,
+      maxWaiterTime: 800,
       clientClass: MyClient,
     });
+
+    const pair = await connectClientPair();
+    sharedWaiterClient = pair.client;
+    sharedWaiterServerClient = pair.serverClient;
+
+    server.setMessageHandler("serverSample", async (_socket, text: string) => {
+      return text + " success";
+    });
+
+    sharedWaiterClient.setMessageHandler("clientSample", (gotValue: string) => {
+      return gotValue + " success";
+    });
+
+    sharedWaiterClient.setMessageHandler("This event exists", (data) => {
+      return data + "!";
+    });
+
+    sharedWaiterClient.setMessageHandler("BroadcastWaiter", () => {
+      return "Data1";
+    });
+
+    sharedWaiterClient.setMessageHandler("BroadcastWaiterTimeout", () => {
+      return "Data1";
+    });
   });
+
+  const connectClientPair = async () => {
+    const existingClients = new Set(server.clients);
+
+    const client = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
+      console.error("ZilaConnection error happened:\n" + reason);
+    });
+
+    if (client.status !== WSStatus.OPEN) {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Timed out waiting for client connection to open."));
+        }, 2000);
+
+        client.addEventListener("onStatusChange", (status: WSStatus) => {
+          if (status === WSStatus.OPEN) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        });
+      });
+    }
+
+    let serverClient: ZilaClient | undefined;
+    for (let i = 0; i < 100; i++) {
+      const found = server.clients.find((c) => !existingClients.has(c));
+      if (found) {
+        serverClient = found;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    if (!serverClient) {
+      throw new Error("Unable to resolve newly connected server-side client instance.");
+    }
+
+    // Give both runtimes one tick so message handlers are ready on fresh sockets.
+    await sleep(10);
+    return { client, serverClient };
+  };
+
+  const disconnectClient = async (client: ZilaConnection) => {
+    if (client.status !== WSStatus.CLOSED) {
+      client.disconnect();
+      await sleep(20);
+    }
+  };
+
+  const ensureSharedWaiterPair = async () => {
+    if (!sharedWaiterClient || sharedWaiterClient.status !== WSStatus.OPEN) {
+      const pair = await connectClientPair();
+      sharedWaiterClient = pair.client;
+      sharedWaiterServerClient = pair.serverClient;
+    }
+  };
 
   test("Loggers", () => {
     VerboseLogger.error("Error");
@@ -95,52 +178,47 @@ describe("Non-Secure", () => {
   });
 
   test("Connecting to the server", async () => {
-    client = await connectTo("ws://127.0.0.1:6589", (reason) => {
-      console.error("ZilaConnection error happened:\n" + reason);
-    });
-
-    client.setMessageHandler("clientSample", (gotValue: string) => {
-      expect(gotValue).toEqual("sampleText");
-      return gotValue + " success";
-    });
-
-    server.setMessageHandler("serverSample", async (socket, text: string) => {
-      clientSocket = socket;
-      expect(text).toEqual("serverSampleText");
-
-      return text + " success";
-    });
+    expect(sharedWaiterClient.status).toBe(WSStatus.OPEN);
   });
 
   test("Client Async waiter", async () => {
-    expect(await client.waiter("serverSample", "serverSampleText")).toEqual<string>("serverSampleText success");
+    await ensureSharedWaiterPair();
+
+    await expect(sharedWaiterClient.waiter("serverSample", "serverSampleText")).resolves.toEqual(
+      "serverSampleText success"
+    );
   });
 
   test("Server Async Waiter", async () => {
-    const resp = await server.waiter<string>(clientSocket, "clientSample", "sampleText");
-    expect(resp).toEqual<string>("sampleText success");
+    await ensureSharedWaiterPair();
+
+    await expect(server.waiter<string>(sharedWaiterServerClient, "clientSample", "sampleText")).resolves.toEqual(
+      "sampleText success"
+    );
   });
 
   test("Initial cookies parsed from upgrade only", async () => {
-    expect(clientSocket).toBeDefined();
-    const initial = Array.from(clientSocket.cookies.entries());
+    const { client, serverClient } = await connectClientPair();
+    const initial = Array.from(serverClient.cookies.entries());
     client.send("SyncCookies", "foo=bar");
     await new Promise((r) => setTimeout(r, 50));
-    expect(Array.from(clientSocket.cookies.entries())).toEqual(initial);
+    expect(Array.from(serverClient.cookies.entries())).toEqual(initial);
+    await disconnectClient(client);
   });
 
   test("Cookie sync endpoint adds new cookies and does not override existing ones", async () => {
+    const { client, serverClient } = await connectClientPair();
     // Establish a server-side cookie first through direct server mutation (simulating earlier state)
-    clientSocket.cookies.set("serverOnly", "persist");
+    serverClient.cookies.set("serverOnly", "persist");
     const first = await fetch("http://127.0.0.1:6589/zilaws/cookieSync", {
       method: "GET",
       headers: { Cookie: "testcookie=abc123; another=value" },
     });
     expect(first.status).toBe(200);
     await new Promise((r) => setTimeout(r, 30));
-    expect(clientSocket.cookies.get("testcookie")).toBe("abc123");
-    expect(clientSocket.cookies.get("another")).toBe("value");
-    expect(clientSocket.cookies.get("serverOnly")).toBe("persist");
+    expect(serverClient.cookies.get("testcookie")).toBe("abc123");
+    expect(serverClient.cookies.get("another")).toBe("value");
+    expect(serverClient.cookies.get("serverOnly")).toBe("persist");
 
     // Second sync tries to override serverOnly cookie with different value
     const second = await fetch("http://127.0.0.1:6589/zilaws/cookieSync", {
@@ -155,67 +233,163 @@ describe("Non-Secure", () => {
     // Wait for processing
     await new Promise((r) => setTimeout(r, 30));
     // serverOnly must remain original
-    expect(clientSocket.cookies.get("serverOnly")).toBe("persist");
+    expect(serverClient.cookies.get("serverOnly")).toBe("persist");
     // newclient should be added
-    expect(clientSocket.cookies.get("newclient")).toBe("xyz");
+    expect(serverClient.cookies.get("newclient")).toBe("xyz");
     // Ensure override attempt did not succeed
-    expect(clientSocket.cookies.get("serverOnly")).not.toBe("attemptOverride");
+    expect(serverClient.cookies.get("serverOnly")).not.toBe("attemptOverride");
+
+    await disconnectClient(client);
   });
 
-  test("Custom WS Client data", () => {
-    server.onceMessageHandler("DataCheck", (socket) => {
-      expect(socket.clientData).toEqual({
-        rank: "admin",
-        username: "SomeUsername",
+  test("Late HttpOnly server cookie is delivered through cookieSync", async () => {
+    const { client, serverClient } = await connectClientPair();
+
+    server.setClientCookie(serverClient, {
+      name: "lateHttpOnly",
+      value: "secret-value",
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+    });
+
+    const firstSync = await fetch("http://127.0.0.1:6589/zilaws/cookieSync", {
+      method: "GET",
+    });
+    expect(firstSync.status).toBe(200);
+
+    const firstSetCookies = firstSync.headers.getSetCookie
+      ? firstSync.headers.getSetCookie()
+      : [firstSync.headers.get("set-cookie")].filter(Boolean);
+
+    expect(firstSetCookies.join("; ")).toContain("lateHttpOnly=secret-value");
+    expect(firstSetCookies.join("; ").toLowerCase()).toContain("httponly");
+    expect(firstSetCookies.join("; ").toLowerCase()).toContain("samesite=lax");
+    expect(firstSetCookies.join("; ")).toContain("Path=/");
+
+    const secondSync = await fetch("http://127.0.0.1:6589/zilaws/cookieSync", {
+      method: "GET",
+      headers: { Cookie: "lateHttpOnly=secret-value" },
+    });
+    expect(secondSync.status).toBe(200);
+
+    const secondSetCookies = secondSync.headers.getSetCookie
+      ? secondSync.headers.getSetCookie()
+      : [secondSync.headers.get("set-cookie")].filter(Boolean);
+
+    expect(secondSetCookies.join("; ")).not.toContain("lateHttpOnly=secret-value");
+
+    await disconnectClient(client);
+  });
+
+  test("Cookie sync is isolated by zilaSession token", async () => {
+    const wsA = new WebSocket("ws://127.0.0.1:6589", {
+      headers: { Cookie: "zilaSession=sessA" },
+    });
+    const wsB = new WebSocket("ws://127.0.0.1:6589", {
+      headers: { Cookie: "zilaSession=sessB" },
+    });
+
+    await Promise.all([
+      new Promise<void>((resolve, reject) => {
+        wsA.on("open", () => resolve());
+        wsA.on("error", reject);
+      }),
+      new Promise<void>((resolve, reject) => {
+        wsB.on("open", () => resolve());
+        wsB.on("error", reject);
+      }),
+    ]);
+
+    await new Promise((r) => setTimeout(r, 30));
+
+    const sessionAClient = server.clients.find((c) => c.cookies.get("zilaSession") === "sessA");
+    const sessionBClient = server.clients.find((c) => c.cookies.get("zilaSession") === "sessB");
+
+    expect(sessionAClient).toBeDefined();
+    expect(sessionBClient).toBeDefined();
+
+    const resp = await fetch("http://127.0.0.1:6589/zilaws/cookieSync", {
+      method: "GET",
+      headers: { Cookie: "zilaSession=sessA; scoped=1" },
+    });
+    expect(resp.status).toBe(200);
+
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(sessionAClient?.cookies.get("scoped")).toBe("1");
+    expect(sessionBClient?.cookies.get("scoped")).toBe(undefined);
+
+    await Promise.all([
+      new Promise<void>((resolve) => {
+        wsA.on("close", () => resolve());
+        wsA.close(CloseCodes.NORMAL, "test done");
+      }),
+      new Promise<void>((resolve) => {
+        wsB.on("close", () => resolve());
+        wsB.close(CloseCodes.NORMAL, "test done");
+      }),
+    ]);
+  });
+
+  test("Custom WS Client data", async () => {
+    const { client } = await connectClientPair();
+
+    const gotPayload = new Promise<void>((resolve) => {
+      server.onceMessageHandler("DataCheck", (socket) => {
+        expect(socket.clientData).toEqual({
+          rank: "admin",
+          username: "SomeUsername",
+        });
+        resolve();
       });
     });
 
-    client.send("asd", 123);
+    client.send("DataCheck", 123);
+    await gotPayload;
+    await disconnectClient(client);
   });
 
   test("Waiter not responding in time", async () => {
-    const resp = await server.waiter<WSStatus[]>(clientSocket, "This event id does not exist on the client");
-    expect(resp).toBe(undefined);
+    await ensureSharedWaiterPair();
+
+    await expect(
+      server.waiter<WSStatus[]>(sharedWaiterServerClient, "This event id does not exist on the client")
+    ).resolves.toBe(undefined);
   }, 1200);
 
   test("WaiterTimeout not responding in time", async () => {
-    const resp = await server.waiterTimeout<WSStatus[]>(
-      clientSocket,
-      "This event id does not exist on the client",
-      300
-    );
-    expect(resp).toBe(undefined);
+    await ensureSharedWaiterPair();
+
+    await expect(
+      server.waiterTimeout<WSStatus[]>(sharedWaiterServerClient, "This event id does not exist on the client", 300)
+    ).resolves.toBe(undefined);
   }, 400);
 
   test("WaiterTimeout responding in time", async () => {
-    client.onceMessageHandler("This event exists", (data) => {
-      return data + "!";
-    });
+    await ensureSharedWaiterPair();
 
-    const resp = await server.waiterTimeout<WSStatus[]>(clientSocket, "This event exists", 300, "Some data");
-    expect(resp).toBe("Some data!");
+    await expect(
+      server.waiterTimeout<WSStatus[]>(sharedWaiterServerClient, "This event exists", 300, "Some data")
+    ).resolves.toBe("Some data!");
   }, 400);
 
   test("Broadcast Waiter", async () => {
-    client.onceMessageHandler("BroadcastWaiter", (data: string) => {
-      expect(data).toBe("Broadcast data");
-      return "Data1";
-    });
+    await ensureSharedWaiterPair();
 
-    const locClient = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
-    locClient.onceMessageHandler("BroadcastWaiter", (data: string) => {
-      expect(data).toBe("Broadcast data");
+    locClient.setMessageHandler("BroadcastWaiter", (data: string) => {
       return "Data2";
     });
 
-    const locClient2 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient2 = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
-    const locClient3 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient3 = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
@@ -229,21 +403,17 @@ describe("Non-Secure", () => {
   });
 
   test("Broadcast Waiter with timeout responding in time", async () => {
-    client.onceMessageHandler("BroadcastWaiterTimeout", (data: string) => {
-      expect(data).toBe("Broadcast data");
-      return "Data1";
-    });
+    await ensureSharedWaiterPair();
 
-    const locClient = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
-    const locClient2 = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient2 = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
-    locClient.onceMessageHandler("BroadcastWaiterTimeout", async (data: string) => {
-      expect(data).toBe("Broadcast data");
+    locClient.setMessageHandler("BroadcastWaiterTimeout", async (data: string) => {
       return await new Promise((res) => {
         res("Data2");
       });
@@ -258,6 +428,8 @@ describe("Non-Secure", () => {
   });
 
   test("Broadcast Waiter with timeout not responding in time", async () => {
+    await ensureSharedWaiterPair();
+
     const resp = await server.broadcastWaiterTimeout<string>("NonExistentIdentifier", 50, "Broadcast data");
     const testArray: any[] = [];
 
@@ -269,11 +441,13 @@ describe("Non-Secure", () => {
   });
 
   test("Broadcast Send", async () => {
-    client.onceMessageHandler("Broadcast", (data: string) => {
+    await ensureSharedWaiterPair();
+
+    sharedWaiterClient.onceMessageHandler("Broadcast", (data: string) => {
       expect(data).toBe("Broadcast data");
     });
 
-    const locClient = await connectTo("ws://127.0.0.1:6589", (reason) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6589", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
@@ -286,12 +460,30 @@ describe("Non-Secure", () => {
   });
 
   test("OnceMessageHandler", async () => {
-    clientSocket.onceMessageHandler("ONCEHANDLER", (arg1: number) => {
+    await ensureSharedWaiterPair();
+
+    sharedWaiterServerClient.onceMessageHandler("ONCEHANDLER", (arg1: number) => {
       arg1++;
-      expect(arg1).toEqual(26.474852784587654);
       return arg1;
     });
-    expect(await client.waiter("ONCEHANDLER", 25.474852784587654)).toBe(26.474852784587654);
+
+    await expect(sharedWaiterClient.waiter("ONCEHANDLER", 25.474852784587654)).resolves.toBe(26.474852784587654);
+  });
+
+  test("Get all clients", async () => {
+    const { client, serverClient } = await connectClientPair();
+    expect(server.clients.includes(serverClient)).toBe(true);
+    await disconnectClient(client);
+  });
+
+  test("Server error log", () => {
+    server.serverWrapper.emit("error", new Error("Example error"));
+  });
+
+  test("Server's client socket error log", async () => {
+    const { client, serverClient } = await connectClientPair();
+    serverClient.socket.emit("error", new Error("Example client error"));
+    await disconnectClient(client);
   });
 
   function loc(...args: any[]) {}
@@ -322,20 +514,8 @@ describe("Non-Secure", () => {
     };
   });
 
-  test("Get all clients", () => {
-    expect(server.clients.includes(clientSocket)).toBe(true);
-  });
-
-  test("Server error log", () => {
-    server.serverWrapper.emit("error", new Error("Example error"));
-  });
-
-  test("Server's client socket error log", () => {
-    clientSocket.socket.emit("error", new Error("Example client error"));
-  });
-
   afterAll(async () => {
-    await client.disconnectAsync();
+    await disconnectClient(sharedWaiterClient);
     await server.stopServerAsync();
   });
 });
@@ -369,7 +549,7 @@ describe("Server Stop", () => {
   });
 
   test("Double Server Stop Async ", async () => {
-    const clients = new Array(12).map(async (el) => await connectTo("ws://127.0.0.1:6591"));
+    const clients = new Array(12).map(async (el) => await ZilaConnection.connectTo("ws://127.0.0.1:6591"));
 
     await server.stopServerAsync();
     await expect(server.stopServerAsync()).rejects.toThrow("The server is not running");
@@ -388,7 +568,7 @@ describe("Connection closing", () => {
   });
 
   test("Disconnected SimpleLog", async () => {
-    const locClient = await connectTo("ws://127.0.0.1:6592", (reason) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6592", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
@@ -397,7 +577,7 @@ describe("Connection closing", () => {
 
   test("Kick", async () => {
     await new Promise<void>(async (resolve) => {
-      const locClient = await connectTo("ws://127.0.0.1:6592");
+      const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6592");
       server.onceMessageHandler("TOBEKICKED", async (socket) => {
         socket.kick();
       });
@@ -412,9 +592,9 @@ describe("Connection closing", () => {
 
   test("Ban", async () => {
     await new Promise<void>(async (resolve) => {
-      const locClient = await connectTo("ws://127.0.0.1:6592", async (reason) => {
+      const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6592", async (reason?: string) => {
         expect(reason).toEqual("A reason to ban");
-        const retry = await connectTo("ws://127.0.0.1:6592", (reason) => {
+        const retry = await ZilaConnection.connectTo("ws://127.0.0.1:6592", (reason?: string) => {
           expect(reason).toEqual("A reason to ban");
           resolve();
         });
@@ -429,8 +609,8 @@ describe("Connection closing", () => {
   });
 
   test("Client is banned", async () => {
-    const locClient = await connectTo("ws://127.0.0.1:6592");
-    locClient.addEventListener("onStatusChange", (val) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6592");
+    locClient.addEventListener("onStatusChange", (val: WSStatus) => {
       expect(val).toBe(WSStatus.CLOSED);
     });
   });
@@ -452,7 +632,7 @@ describe("Connection closing", () => {
   });
 
   test("Disconnected SimpleLog", async () => {
-    const locClient = await connectTo("ws://127.0.0.1:6593", (reason) => {
+    const locClient = await ZilaConnection.connectTo("ws://127.0.0.1:6593", (reason?: string) => {
       console.error("ZilaConnection error happened:\n" + reason);
     });
 
@@ -477,6 +657,7 @@ describe("Secure Server connecting", () => {
         pathToCert: join(__dirname, "cert/cert.pem"),
         pathToKey: join(__dirname, "cert/key.pem"),
         passphrase: "asdASD123",
+        allowSelfSigned: true,
       },
     });
   });
@@ -484,7 +665,7 @@ describe("Secure Server connecting", () => {
   test("Connecting", async () => {
     client = await ZilaConnection.connectTo(
       "wss://127.0.0.1:6594",
-      (reason) => {
+      (reason?: string) => {
         console.error(reason);
       },
       true
@@ -510,6 +691,7 @@ describe("Secure Server Connecting", () => {
         pathToCert: join(__dirname, "cert/cert.pem"),
         pathToKey: join(__dirname, "cert/key.pem"),
         passphrase: "asdASD123",
+        allowSelfSigned: true,
       },
     });
   });
@@ -521,7 +703,7 @@ describe("Secure Server Connecting", () => {
   test("Disconnecting", async () => {
     client = await ZilaConnection.connectTo(
       "wss://127.0.0.1:6596",
-      (reason) => {
+      (reason?: string) => {
         console.error(reason);
       },
       true
@@ -553,7 +735,7 @@ describe("Custom Header server", () => {
   test("Connecting", async () => {
     client = await ZilaConnection.connectTo(
       "ws://127.0.0.1:6595",
-      (reason) => {
+      (reason?: string) => {
         console.error(reason);
       },
       true

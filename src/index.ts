@@ -13,6 +13,7 @@ import { CloseCodes, WSStatus } from "./enums";
 import { IWSMessage } from "./interfaces/IWSMessage";
 import type { ZilaWSCallback } from "./ZilaWSCallback";
 import { parse as parseCookie } from "cookie";
+import { ICookie } from "./interfaces/ICookie";
 
 // Import server wrappers
 import ServerWrapper from "./wrappers/ServerWrapper";
@@ -101,13 +102,23 @@ export interface IServerSettings {
 
   /**
    * Restricts which HTTP origins may access the /zilaws/cookieSync endpoint (CORS).
+   *
    * If omitted, the server will reflect the Origin header (previous insecure behavior).
+   *
    * If provided:
    *  - Use an array of allowed exact origin strings (e.g. ["https://app.example.com", "http://localhost:3000"]).
    *  - The special value "*" inside the array will allow any origin (not recommended when credentials are involved).
    * Matching is case-sensitive and must be an exact string match.
    */
   cookieSyncAllowedOrigins?: string[];
+
+  /**
+   * Sets the name of the cookie which ZilaWS uses to identify sessions.
+   * If you are using an auth library like betterAuth consider changing this to the name of the cookie which the lib uses.
+   *
+   * Default value: `zilaSession`
+   */
+  sessionTokenCookieName?: string;
 }
 
 export interface IServerEvents<T extends ZilaClient> {
@@ -186,7 +197,6 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   public serverWrapper: ServerWrapper;
   VerbLog?: ILogger;
   Logger?: ILogger;
-  maxWaiterTime = 800;
 
   private clientClass: new (
     socket: WebSocketClient,
@@ -230,10 +240,14 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
   }
 
   public constructor(settings: IServerSettings) {
-    this.settings = settings;
+    this.settings = this.assignDefaultSettings(settings);
     // @ts-ignore
     this.clientClass = settings.clientClass ?? ZilaClient;
-    if (settings.maxWaiterTime) this.maxWaiterTime = settings.maxWaiterTime;
+
+    // Allow self-signed certificates if configured
+    if (settings.https?.allowSelfSigned) {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+    }
 
     if (settings.verbose) {
       this.VerbLog = VerboseLogger;
@@ -264,7 +278,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     (this.serverWrapper as any).addListener?.(
       "cookieSync",
       (payload: any, respond: (setHeaders?: string[]) => void) => {
-        const headers = this.processCookieSync(payload.ip, payload.cookies);
+        const headers = this.processCookieSync(payload.ip, payload.cookies, payload.userAgent);
         respond(headers);
       }
     );
@@ -274,6 +288,14 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
         settings.https ? "enabled" : "disabled"
       }.`
     );
+  }
+
+  private assignDefaultSettings(settings: IServerSettings) {
+    return {
+      maxWaiterTime: 800,
+      sessionTokenCookieName: "zilaSession",
+      ...settings,
+    };
   }
 
   private handleConnection(socket: IClientWrapper, request: IRequestWrapper): void {
@@ -289,12 +311,13 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
     this.Logger?.log(`A client has connected: ${clientIP}:${request.socket.remotePort}`);
 
-    // Initial cookies from upgrade
-    const initialCookies = request.headers.cookie
-      ? new Map<string, string>(Object.entries(parseCookie(request.headers.cookie as string)))
-      : new Map<string, string>();
-
-    // No previously synced shared store (feature reverted)
+    const parsedUpgradeCookies = request.headers.cookie ? parseCookie(request.headers.cookie as string) : {};
+    const initialCookies = new Map<string, string>(Object.entries(parsedUpgradeCookies));
+    const sessionKey = this.resolveSessionKey(
+      initialCookies,
+      clientIP,
+      request.headers["user-agent"] as string | undefined
+    );
 
     let zilaSocket = new this.clientClass(
       socket as any,
@@ -304,6 +327,8 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
       request.headers as { [name: string]: string },
       initialCookies
     );
+
+    this.serverWrapper.registerSessionClient(sessionKey, zilaSocket as ZilaClient, initialCookies);
 
     this._clients.push(zilaSocket);
 
@@ -328,6 +353,8 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
     // Set up close handler
     socket.addListener("close", (event: any) => {
+      this.serverWrapper.unregisterSessionClient(sessionKey, zilaSocket as ZilaClient);
+
       // Remove client from the list
       const index = this._clients.indexOf(zilaSocket);
       if (index > -1) {
@@ -377,31 +404,36 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
     return;
   }
 
+  public setClientCookie(socket: ZilaClient, cookie: ICookie): void {
+    this.serverWrapper.queueClientCookie(socket, cookie);
+  }
+
   /** Internal hook used by wrappers: cookieSync endpoint */
-  private processCookieSync(ip: string | undefined, rawCookieHeader: string | undefined): string[] | undefined {
-    if (!ip) return undefined;
-    const targetClients = this._clients.filter((c) => c.ip === ip);
-    if (!targetClients.length) return undefined;
+  private processCookieSync(
+    ip: string | undefined,
+    rawCookieHeader: string | undefined,
+    userAgent: string | undefined
+  ): string[] | undefined {
     const newCookies = rawCookieHeader
       ? new Map<string, string>(Object.entries(parseCookie(rawCookieHeader)))
       : new Map<string, string>();
+    const sessionKey = this.resolveSessionKey(newCookies, ip, userAgent);
+    return this.serverWrapper.syncSessionCookies(sessionKey, newCookies);
+  }
 
-    const setCookieHeaders: string[] = [];
-    for (const c of targetClients) {
-      for (const [k, v] of newCookies.entries()) {
-        if (!c.cookies.has(k)) {
-          (c as any)._cookies.set(k, v);
-        }
-      }
-      // compute diff to send back (currently server does not add new cookies beyond existing internal map)
-      // If server had cookies not present in the header, we send them back
-      for (const [k, v] of (c as any)._cookies.entries()) {
-        if (!newCookies.has(k)) {
-          setCookieHeaders.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-        }
-      }
+  private resolveSessionKey(
+    cookies: Map<string, string>,
+    ip: string | undefined,
+    userAgent: string | undefined
+  ): string {
+    const tokenCookieName = this.settings.sessionTokenCookieName || "zilaSession";
+    const sessionToken = cookies.get(tokenCookieName);
+    if (sessionToken) {
+      return `token:${sessionToken}`;
     }
-    return setCookieHeaders.length ? setCookieHeaders : undefined;
+
+    // Keep legacy fallback behavior for clients that do not provide a session cookie.
+    return `fallback:${ip ?? `ua:${userAgent ?? "unknown-ua"}`}`;
   }
 
   // (Removed duplicate constructor introduced by refactor)
@@ -656,7 +688,7 @@ export class ZilaServer<T extends ZilaClient = ZilaClient> {
 
       /* istanbul ignore next */
       if (msgObj.identifier[0] != "@") {
-        // No built-in inner events currently handled (cookie syncing removed)
+        // No built-in inner events currently handled
         return;
       }
 

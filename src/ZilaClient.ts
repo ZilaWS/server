@@ -24,7 +24,7 @@ export default class ZilaClient {
 
   private _cookies: Map<string, string> = new Map();
   /**
-   * Exposed cookie map proxy (immutable reference semantics; controlled via set/delete wrappers)
+   * Exposed cookie map proxy (mutable map reference with sync hooks on writes).
    */
   private _cookiesProxy: Pick<
     Map<string, string>,
@@ -43,19 +43,17 @@ export default class ZilaClient {
         get(key: string) {
           return that._cookies.get(key);
         },
-        set(key: string, value: string) {
-          that._cookies.set(key, value);
-          // trigger client-side sync request (built-in message instructs runtime to perform HTTP GET cookieSync)
-          that.bSend("COOKIE_SYNC_REQUEST");
+        set(name: string, value: string) {
+          that.server.setClientCookie(that, { name, value });
           return this as any;
         },
-        delete(key: string) {
-          const existed = that._cookies.delete(key);
-          if (existed) that.bSend("COOKIE_SYNC_REQUEST");
+        delete(name: string) {
+          const existed = that._cookies.delete(name);
+          if (existed) that.bSend("syncCookie");
           return existed;
         },
-        has(key: string) {
-          return that._cookies.has(key);
+        has(name: string) {
+          return that._cookies.has(name);
         },
         forEach(cb: any, thisArg?: any) {
           return that._cookies.forEach(cb, thisArg);
@@ -72,15 +70,6 @@ export default class ZilaClient {
       };
     }
     return this._cookiesProxy;
-  }
-
-  /**
-   * Internal use: merges provided cookies into the client's cookie map (overwrite existing values).
-   * Exposed without documentation to avoid public API bloat; used by server refresh.
-   */
-  /* istanbul ignore next */
-  public __mergeCookies(cookies: Map<string, string>) {
-    for (const [k, v] of cookies.entries()) this._cookies.set(k, v);
   }
 
   /**
@@ -109,19 +98,20 @@ export default class ZilaClient {
     this.headers = headers;
   }
 
-  // Cookie syncing removed: cookies are now only read from the initial HTTP upgrade request.
-
-  // setCookie/removeCookie deprecated: runtime cookie mutation removed. Keeping methods as no-ops for backwards compatibility.
-  /** @deprecated Cookie mutation after upgrade removed. Cookies are immutable; only initial upgrade request cookies available. */
+  // setCookie/removeCookie are kept for backward compatibility and mutate the in-memory cookie store.
   /* istanbul ignore next */
-  public setCookie(_cookie: ICookie) {
-    return; // no-op
+  public setCookie(cookie: ICookie) {
+    this.server.setClientCookie(this, cookie);
   }
 
-  /** @deprecated Cookie mutation after upgrade removed. Cookies are immutable; only initial upgrade request cookies available. */
+  public requestCookieSync(): void {
+    this.bSend("syncCookie");
+  }
+
+  /** Removes a cookie from the in-memory cookie store. */
   /* istanbul ignore next */
-  public removeCookie(_cookieName: string) {
-    return; // no-op
+  public removeCookie(cookieName: string) {
+    this.cookies.delete(cookieName);
   }
 
   /**
@@ -140,7 +130,7 @@ export default class ZilaClient {
   ): string {
     /* istanbul ignore next */
     return JSON.stringify({
-      identifier: isBuiltIn ? "@" + identifier : identifier,
+      identifier: isBuiltIn ? identifier : "@" + identifier,
       message: data,
       callbackId: callbackId,
     });
@@ -190,7 +180,7 @@ export default class ZilaClient {
           new Promise((_r, rej) => {
             timeout = setTimeout(() => {
               _r(undefined);
-            }, this.server.maxWaiterTime);
+            }, this.server.settings.maxWaiterTime);
           }),
         ]) as Promise<T | undefined>
       );
@@ -240,9 +230,9 @@ export default class ZilaClient {
    * @param identifier The eventhandler's name
    * @param callback The eventhandler
    */
-  public setMessageHandler(identifier: string, callback: (...args: any[]) => void) {
+  public setMessageHandler(identifier: string, callback: (...args: any[]) => any) {
     return this.server.setMessageHandler(identifier, (_, ...args: any[]) => {
-      callback(...args);
+      return callback(...args);
     });
   }
 

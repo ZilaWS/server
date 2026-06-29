@@ -76,13 +76,17 @@ export default class NodeServerWrapper extends ServerWrapper {
         if (req.method === "GET") {
           // Build a minimal response; listeners can mutate headers array via 'headers' event already, so here we just parse
           const cookieHeader = req.headers["cookie"] as string | undefined;
-          const payload = { type: "cookieSync", ip: req.socket.remoteAddress, cookies: cookieHeader };
+          const payload = {
+            type: "cookieSync",
+            ip: req.socket.remoteAddress,
+            cookies: cookieHeader,
+            userAgent: req.headers["user-agent"] as string | undefined,
+          };
           // Emit a synthetic event the ZilaServer will listen for through wrapper 'emit'
           this.emit("cookieSync" as any, payload, (setCookieHeaders?: string[]) => {
             if (setCookieHeaders && setCookieHeaders.length) {
-              for (const h of setCookieHeaders) {
-                res.setHeader("Set-Cookie", setCookieHeaders);
-              }
+              // Set-Cookie may accept an array of cookie strings
+              res.setHeader("Set-Cookie", setCookieHeaders as any);
             }
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true }));

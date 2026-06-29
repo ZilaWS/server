@@ -5,13 +5,14 @@ import { CloseCodes, IServerSettings, WSStatus } from "..";
 import ServerWrapper from "./ServerWrapper";
 import IncomingMessageWrapper from "./IncomingMessageWrapper";
 import "../overrides/BunServerWebsocket";
-import { SimpleLogger, VerboseLogger } from "../verboseLogger";
 
 interface IWebSocketData {
   headers: {
     [name: string]: string | string[] | undefined;
   };
   id: string;
+  remoteAddress?: string;
+  remotePort?: number;
 }
 
 /**
@@ -58,9 +59,8 @@ class BunClientWrapper implements IClientWrapper {
 }
 
 export default class BunServerWrapper extends ServerWrapper {
-  private server: Bun.Server = null!;
+  private server: Bun.Server<IWebSocketData> = null!;
   private connectedClients: Map<string, IClientWrapper> = new Map();
-  private eventListeners: Map<string, Function[]> = new Map();
 
   public readonly baseWssOptions: IBaseServerOptions;
 
@@ -77,7 +77,7 @@ export default class BunServerWrapper extends ServerWrapper {
     }
 
     try {
-      this.server = Bun.serve<IWebSocketData, {}>({
+      this.server = Bun.serve<IWebSocketData>({
         port: settings.port,
         reusePort: settings.reusePort,
         hostname: settings.host,
@@ -95,7 +95,7 @@ export default class BunServerWrapper extends ServerWrapper {
           open: this.handleOpen.bind(this),
           close: this.handleClose.bind(this),
         },
-        error: this.handleError,
+        error: this.handleError.bind(this),
       });
 
       this._status = WSStatus.OPEN;
@@ -133,8 +133,8 @@ export default class BunServerWrapper extends ServerWrapper {
       const success = this.server.upgrade(req, {
         data: {
           headers: headersObject,
-          remoteAddress: clientIP,
-          remotePort: 0,
+          remoteAddress: clientIP?.address,
+          remotePort: clientIP?.port,
           id: crypto.randomUUID(),
         },
       });
@@ -180,7 +180,12 @@ export default class BunServerWrapper extends ServerWrapper {
         let setCookieHeaders: string[] | undefined;
         this.emit(
           "cookieSync" as any,
-          { type: "cookieSync", ip: clientIP?.address, cookies: req.headers.get("cookie") },
+          {
+            type: "cookieSync",
+            ip: clientIP?.address,
+            cookies: req.headers.get("cookie"),
+            userAgent: req.headers.get("user-agent") || undefined,
+          },
           (headers?: string[]) => {
             setCookieHeaders = headers;
           }
@@ -222,11 +227,17 @@ export default class BunServerWrapper extends ServerWrapper {
   }
 
   private handleError(error: Bun.ErrorLike): void {
-    const callbacks = this.eventListeners.get("error");
-    if (!callbacks) return;
+    const callbacks = this.eventListeners.get("error") as
+      | Array<NonNullable<IServerWrapperEvents["error"]>>
+      | undefined;
+    if (!callbacks || callbacks.length === 0) return;
 
-    for (let i = 0; i < callbacks?.length; i++) {
-      callbacks[i].call(undefined, error);
+    for (let i = 0; i < callbacks.length; i++) {
+      try {
+        (callbacks[i] as any).call(undefined, error);
+      } catch (err) {
+        console.error("Error in server error listener:", err);
+      }
     }
   }
 
@@ -245,30 +256,6 @@ export default class BunServerWrapper extends ServerWrapper {
     return obj;
   }
 
-  public emit<K extends keyof IServerWrapperEvents>(eventName: K, ...args: any[]): boolean {
-    const listeners = this.eventListeners.get(eventName as string);
-    if (!listeners || listeners.length === 0) {
-      return false;
-    }
-
-    listeners.forEach((listener) => {
-      try {
-        listener.apply(this, args);
-      } catch (error) {
-        console.error(`Error in event listener for ${String(eventName)}:`, error);
-      }
-    });
-
-    return true;
-  }
-
-  public addListener<K extends keyof IServerWrapperEvents>(events: K, callback: IServerWrapperEvents[K]): void {
-    const eventName = events as string;
-    const listeners = this.eventListeners.get(eventName) || [];
-    listeners.push(callback as Function);
-    this.eventListeners.set(eventName, listeners);
-  }
-
   public close(reason?: string): void {
     if (this._status === WSStatus.CLOSED || this._status === WSStatus.ERROR) {
       throw new Error("The server is not running");
@@ -284,7 +271,7 @@ export default class BunServerWrapper extends ServerWrapper {
     // Stop the Bun server
     if (this.server) {
       this.server.stop();
-      this.server = {} as Bun.Server;
+      this.server = {} as Bun.Server<IWebSocketData>;
     }
 
     this.connectedClients.clear();
@@ -311,7 +298,7 @@ export default class BunServerWrapper extends ServerWrapper {
     // Stop the Bun server
     if (this.server) {
       this.server.stop();
-      this.server = {} as Bun.Server;
+      this.server = {} as Bun.Server<IWebSocketData>;
     }
 
     this.connectedClients.clear();

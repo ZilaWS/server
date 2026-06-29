@@ -7,29 +7,101 @@ on:
       - 'README.md'
       - 'LICENSE'
       - '.editorconfig'
+    branches:
+      - main
+      - master
   pull_request:
     paths-ignore:
       - 'docs/**'
       - 'README.md'
       - 'LICENSE'
       - '.editorconfig'
+    branches:
+      - main
+      - master
 
+# zilaws-server and zilaws-client depend on each other (the server tests import
+# zilaws-client and the client tests import zilaws-server). To run the tests we
+# check out BOTH repositories side by side and wire them together with
+# `bun link` (the bun equivalent of `npm link`) so each package resolves to the
+# freshly built local sources of the other instead of the published versions.
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-        node: [18.x]
-
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Checkout server
+        uses: actions/checkout@v4
         with:
-          node-version: ${{ matrix.node }}
-      - name: Install modules
-        run: npm ci
-      - name: Run tests
-        run: npm test
+          path: server
+
+      - name: Checkout client (cross-dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: ZilaWS/client
+          path: client
+          # If the client repo ever becomes private, provide a PAT with read
+          # access here, e.g. token: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install server dependencies
+        working-directory: server
+        run: bun install
+
+      - name: Install client dependencies
+        working-directory: client
+        run: bun install
+
+      # Register both packages globally so they can be linked into one another.
+      - name: Register bun links
+        run: |
+          cd server && bun link
+          cd ../client && bun link
+
+      # The server has no build-time dependency on the client, so build it first.
+      - name: Build zilaws-server
+        working-directory: server
+        run: bun run build:cjs && bun run build:esm && bun run build:types
+
+      # Link the freshly built server into the client. The client build compiles
+      # its test files, which import zilaws-server, so this must happen first.
+      - name: Link zilaws-server into client
+        working-directory: client
+        run: bun link zilaws-server
+
+      - name: Build zilaws-client
+        working-directory: client
+        run: bun run build:cjs && bun run build:esm && bun run build:types
+
+      # Link the freshly built client into the server (used by the server tests).
+      - name: Link zilaws-client into server
+        working-directory: server
+        run: bun link zilaws-client
+
+      # Puppeteer's bundled Chrome + the system libraries it needs to launch
+      # headless on the runner (used by the client browser tests).
+      - name: Install Chrome for Puppeteer
+        working-directory: client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+            libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+            libgbm1 libasound2 libpango-1.0-0 libcairo2 libatspi2.0-0
+          bunx puppeteer browsers install chrome
+
+      - name: Run server tests (bun)
+        working-directory: server
+        run: bun test
+
+      - name: Run client tests (bun)
+        working-directory: client
+        run: bun run test:bun:all

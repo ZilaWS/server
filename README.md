@@ -2,7 +2,7 @@
 
 ZilaWS is a blazingly fast and very lightweight library that provides an extremely easy-to-use way to transmit data via websockets between client-side and server-side using eventhandlers and async waiters
 
-[![Test status badge](https://github.com/ZilaWS/client/actions/workflows/test.yml/badge.svg)](https://github.com/ZilaWS/client/actions/workflows/test.yml)
+[![Test status badge](https://github.com/ZilaWS/server/actions/workflows/test.yml/badge.svg)](https://github.com/ZilaWS/server/actions/workflows/test.yml)
 ![MIT License](https://img.shields.io/badge/License%20-%20MIT%20-%20brightgreen)
 ![coverage label for branches](./.coverage-badges/badge-branches.svg)
 ![coverage label for functions](./.coverage-badges/badge-functions.svg)
@@ -16,6 +16,51 @@ ZilaWS is a blazingly fast and very lightweight library that provides an extreme
 ## Looking for the [zilaws-client](https://www.npmjs.com/package/zilaws-client) package?</h2>
 
 The ZilaWS Server can accept WS connections from non-ZilaWS clients but won't work as expected.
+
+## Runtime support (Node.js & Bun)
+
+Since `3.0.0` the server runs on both Node.js and Bun. The correct server implementation is selected automatically at runtime — no configuration needed. Just run your server with `node` or `bun`.
+
+When running under Bun you can enable port reuse for load-balancing across multiple processes:
+
+```ts
+const server = new ZilaServer({
+    port: 6589,
+    reusePort: true // Bun only
+});
+```
+
+For local HTTPS testing with self-signed certificates:
+
+```ts
+const server = new ZilaServer({
+    port: 6589,
+    https: {
+        pathToCert: "cert/cert.pem",
+        pathToKey: "cert/key.pem",
+        allowSelfSigned: true
+    }
+});
+```
+
+## Cookie syncing
+
+The server exposes a `/zilaws/cookieSync` HTTP endpoint that lets connected clients sync cookies set by the server. Cookies set from the server side (e.g. via `socket.setCookie(...)`) are delivered to the client through this endpoint.
+
+You can configure the cookie sync behavior through server settings:
+
+```ts
+const server = new ZilaServer({
+    port: 6589,
+    // Restrict which origins may call the cookie sync endpoint (CORS).
+    cookieSyncAllowedOrigins: ["https://app.example.com", "http://localhost:3000"],
+    // Name of the cookie used to identify sessions (default: "zilaSession").
+    // Change this to match your auth library's session cookie if needed.
+    sessionTokenCookieName: "zilaSession"
+});
+```
+
+> **Note:** If `cookieSyncAllowedOrigins` is omitted, the server reflects the request's `Origin` header. Set it explicitly in production.
 
 ## Waiters
 

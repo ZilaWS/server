@@ -21,5 +21,8 @@
   ],
   "coveragePathIgnorePatterns": [
     "src/wrappers/BunServerWrapper.ts"
-  ]
+  ],
+  "moduleNameMapper": {
+    "^zilaws-client$": "<rootDir>/../client/src/index.ts"
+  }
 }

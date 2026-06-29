@@ -70,5 +70,5 @@
   // "ignoreDeprecations": "6.0" // Invalid for TS 5.3.3. Use a supported target like "5.0" or remove. Uncomment if needed.
   "ignoreDeprecations": "5.0"
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "test/**/*"]
 }
